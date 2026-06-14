@@ -446,7 +446,8 @@ public class ThemeManager : MonoBehaviour
         {
             // 📝 LE POST-IT : On dit à Unity de lancer la recherche au prochain chargement
             PlayerPrefs.SetInt("AutoStartMatchmaking", 1);
-            PlayerPrefs.Save();
+            PlayerPrefs.Save(); 
+
             
             // On signale que le jeu n'a pas encore démarré (on reste sur l'UI du menu)
             jeuEstLance = false; 
