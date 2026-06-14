@@ -43,6 +43,11 @@ public class ProfileManager : MonoBehaviour
         FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task => {
             if (task.Result == DependencyStatus.Available) 
             {
+                // 🛡️ SÉCURITÉ : On active le cache hors-ligne AVANT toute autre action !
+                // Si le joueur ferme l'appli en cours de sauvegarde, Firebase terminera l'envoi au prochain lancement.
+                FirebaseDatabase.DefaultInstance.SetPersistenceEnabled(true);
+
+                // Seulement ensuite, on crée la référence à la base
                 dbReference = FirebaseDatabase.GetInstance("https://leaderboardgame-5218c-default-rtdb.europe-west1.firebasedatabase.app/").RootReference;
                 InitialiserEtSynchroniser();
             } 
@@ -145,14 +150,70 @@ public class ProfileManager : MonoBehaviour
 
     private void RestaurerSauvegardeSiBesoin(ProfilJoueur profilCloud)
     {
+        // 1. Restaurer les pièces et scores dans la mémoire locale
         SaveManager.instance.data.argentTotal = profilCloud.nbPieces;
         SaveManager.instance.data.meilleurScore = profilCloud.meilleurScoreClassique;
         SaveManager.instance.data.meilleurTempsSpeedrun = profilCloud.meilleurChronoSpeedrun / 100f;
-        
+
         monProfil.nbPieces = profilCloud.nbPieces;
         monProfil.meilleurScoreClassique = profilCloud.meilleurScoreClassique;
         monProfil.meilleurChronoSpeedrun = profilCloud.meilleurChronoSpeedrun;
 
+        // 2. CORRECTION : Restaurer et appliquer le Pseudo
+        if (!string.IsNullOrEmpty(profilCloud.pseudo) && profilCloud.pseudo != "joueur")
+        {
+            PlayerPrefs.SetString("MonPseudoFirebase", profilCloud.pseudo);
+            PlayerPrefs.Save();
+            monProfil.pseudo = profilCloud.pseudo;
+
+            // Transmettre immédiatement le nouveau pseudo aux classements Firestore
+            if (FirebaseManager.instance != null) 
+            {
+                FirebaseManager.instance.DefinirPseudo(profilCloud.pseudo);
+            }
+        }
+
         SaveManager.instance.SauvegarderPartie();
+
+        // 3. CORRECTION : Synchroniser le jeu en direct
+        // Comme Firebase répond avec un léger retard, on force l'écrasement 
+        // des valeurs déjà chargées par les autres scripts.
+        if (GameManager.instance != null)
+        {
+            GameManager.argentTotal = profilCloud.nbPieces; // Met à jour le SafeInt anti-triche
+            GameManager.instance.MettreAJourUI();           // Actualise l'interface en jeu
+        }
+
+        if (ThemeManager.instance != null)
+        {
+            ThemeManager.instance.RafraichirAffichageArgent(); // Actualise l'interface du menu/boutique
+        }
+    }
+    // =================================================================
+    // 🛡️ SÉCURITÉ ANDROID : SAUVEGARDE D'URGENCE
+    // =================================================================
+    
+    void OnApplicationPause(bool isPaused)
+    {
+        // Dès que l'application passe en arrière-plan, on force l'envoi
+        if (isPaused)
+        {
+            Debug.Log("📱 Android : Mise en pause détectée, sauvegarde d'urgence forcée !");
+            
+            // 1. On met à jour nos variables locales avant l'envoi
+            if (SaveManager.instance != null)
+            {
+                monProfil.nbPieces = SaveManager.instance.data.argentTotal;
+                monProfil.meilleurScoreClassique = SaveManager.instance.data.meilleurScore;
+                monProfil.meilleurChronoSpeedrun = Mathf.FloorToInt(SaveManager.instance.data.meilleurTempsSpeedrun * 100f);
+                monProfil.pseudo = PlayerPrefs.GetString("MonPseudoFirebase", "joueur");
+                
+                // On force aussi la sauvegarde sur le téléphone
+                SaveManager.instance.SauvegarderPartie();
+            }
+
+            // 2. On pousse immédiatement les données sur Firebase avant que le téléphone ne "tue" l'appli
+            EnvoyerVersFirebase();
+        }
     }
 }

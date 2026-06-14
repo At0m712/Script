@@ -218,7 +218,7 @@ public void MettreAJourNiveau()
         // C'est ici que tu mettras à jour l'affichage de ton UI (ex: cœurs) si tu en as une !
         MettreAJourUI(); 
     }
-    void MettreAJourUI()
+    public void MettreAJourUI()
     {
         if (texteArgent != null) texteArgent.SetText("{0}", argentTotal);
         if (texteScore != null)  texteScore.SetText("Score : {0}", scoreActuel);

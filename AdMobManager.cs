@@ -16,10 +16,14 @@ public class AdMobManager : MonoBehaviour
     // REMPLACE CES ID DE TEST PAR TES VRAIS ID AVANT LA PUBLICATION !
     private string adUnitIdPieces = "ca-app-pub-5127315609635046/5924930114"; 
     private string adUnitIdResurrection = "ca-app-pub-5127315609635046/6880411762"; 
+    
+    // 👉 C'EST ICI QUE TU DOIS METTRE TON NOUVEL ID INTERSTITIEL !
+    private string adUnitIdInterstitial = "ca-app-pub-5127315609635046/1824249953"; 
 
-    // Les deux "lecteurs" de vidéo indépendants
+    // Les lecteurs de vidéo
     private RewardedAd rewardedAdPieces;
     private RewardedAd rewardedAdResurrection;
+    private InterstitialAd interstitialAd; // 👉 NOUVEAU
 
     private bool recompenseMeritee = false; 
     private bool feuVertRecompense = false; 
@@ -28,23 +32,71 @@ public class AdMobManager : MonoBehaviour
 
     void Awake()
     {
-        if (instance == null) instance = this;
+        // 🛡️ CORRECTION : Immortalité pour conserver les pubs chargées en mémoire
+        if (instance == null) 
+        {
+            instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+            return;
+        }
     }
 
     void Start()
     {
-        // On affiche le bon chiffre dès que le jeu se lance
         MettreAJourTextePubs(); 
     }
 
-    // Fonction appelée par le ConsentManager
     public void LoadRewardedAd()
     {
-        // On demande à charger les DEUX pubs en arrière-plan
+        // On charge toutes les pubs (y compris l'interstitielle) en arrière-plan
         LoadAdPieces();
         LoadAdResurrection();
+        LoadAdInterstitial(); 
     }
 
+    // ==========================================
+    // GESTION DE L'INTERSTITIELLE (Bouton Retour)
+    // ==========================================
+    private void LoadAdInterstitial()
+    {
+        if (interstitialAd != null)
+        {
+            interstitialAd.Destroy();
+            interstitialAd = null;
+        }
+
+        var adRequest = new AdRequest(); 
+        InterstitialAd.Load(adUnitIdInterstitial, adRequest, (InterstitialAd ad, LoadAdError error) =>
+        {
+            if (error != null || ad == null) return;
+            interstitialAd = ad;
+            
+            // On la recharge automatiquement dès qu'elle est fermée
+            interstitialAd.OnAdFullScreenContentClosed += () => { LoadAdInterstitial(); };
+            interstitialAd.OnAdFullScreenContentFailed += (AdError err) => { LoadAdInterstitial(); };
+        });
+    }
+
+    public bool IsInterstitialReady()
+    {
+        return interstitialAd != null && interstitialAd.CanShowAd();
+    }
+
+    public void ShowInterstitialAd()
+    {
+        if (IsInterstitialReady())
+        {
+            interstitialAd.Show();
+        }
+    }
+
+    // ==========================================
+    // GESTION DES PUBS RÉCOMPENSÉES
+    // ==========================================
     private void LoadAdPieces()
     {
         if (rewardedAdPieces != null)
@@ -58,7 +110,6 @@ public class AdMobManager : MonoBehaviour
         {
             if (error != null || ad == null) return;
             rewardedAdPieces = ad;
-            // On lie les événements et on lui dit de recharger cette pub-là à la fin
             RegisterEventHandlers(rewardedAdPieces, LoadAdPieces);
         });
     }
@@ -76,7 +127,6 @@ public class AdMobManager : MonoBehaviour
         {
             if (error != null || ad == null) return;
             rewardedAdResurrection = ad;
-            // On lie les événements et on lui dit de recharger cette pub-là à la fin
             RegisterEventHandlers(rewardedAdResurrection, LoadAdResurrection);
         });
     }
@@ -134,7 +184,6 @@ public class AdMobManager : MonoBehaviour
         LancerLaVideo(rewardedAdResurrection);
     }
 
-    // Cette fonction prend maintenant en paramètre la bonne pub à afficher
     private void LancerLaVideo(RewardedAd adAVisualiser)
     {
         if (adAVisualiser != null && adAVisualiser.CanShowAd())
@@ -193,7 +242,6 @@ public class AdMobManager : MonoBehaviour
         }
     }
 
-    // Gestionnaire dynamique qui recharge la bonne pub à la fin
     private void RegisterEventHandlers(RewardedAd ad, Action fonctionDeRechargement)
     {
         ad.OnAdFullScreenContentClosed += () => 
@@ -208,7 +256,6 @@ public class AdMobManager : MonoBehaviour
                 recompenseEnAttente = TypeRecompense.Rien;
             }
             
-            // On recharge la pub spécifique qui vient d'être regardée
             fonctionDeRechargement?.Invoke(); 
         };
         

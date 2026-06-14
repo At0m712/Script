@@ -40,6 +40,8 @@ public class MatchmakingManager : MonoBehaviour
     public static string monRoleActuel; 
     public static string idDeMonSalon;
     public static int seedDuNiveau; 
+    // Compteur pour déclencher la publicité interstitielle
+    private static int compteurPubRetour = 0;
 
     void Awake()
     {
@@ -74,6 +76,20 @@ public class MatchmakingManager : MonoBehaviour
     {
         if (rechercheEnCours) return;
 
+        // 🛡️ SÉCURITÉ 1 : Vérification de la connexion Internet (Syndrome du métro)
+        if (Application.internetReachability == NetworkReachability.NotReachable)
+        {
+            Debug.LogWarning("Aucune connexion Internet détectée !");
+            
+            // On affiche le panneau pour prévenir le joueur
+            if (panelMatchmaking != null) panelMatchmaking.SetActive(true);
+            if (texteStatut != null) texteStatut.text = "Pas de connexion Internet...";
+            
+            // On ferme le panneau et on annule tout automatiquement après 2 secondes
+            Invoke("AnnulerRecherche", 2f); 
+            return;
+        }
+
         if (!firebaseEstPret || dbReference == null)
         {
             Debug.LogWarning("⏳ Firebase se connecte, réessaie dans 1 seconde !");
@@ -84,14 +100,15 @@ public class MatchmakingManager : MonoBehaviour
         matchLance = false;
         declencherCompteARebours = false;
 
-        // 🛡️ CORRECTION CRITIQUE ANDROID : On applique le nettoyage du DeviceID comme dans ProfileManager !
+        // 🛡️ SÉCURITÉ 2 : Nettoyage de l'ID Android
         string idAppareilSecurise = SystemInfo.deviceUniqueIdentifier.Replace(".", "").Replace("#", "").Replace("$", "").Replace("[", "").Replace("]", "");
         
         dbReference.Child("Joueurs").Child(idAppareilSecurise).Child("pseudo").GetValueAsync().ContinueWithOnMainThread(task =>
         {
             string monVraiPseudo = "Joueur"; 
 
-            if (task.IsCompleted && task.Result.Exists)
+            // On vérifie que la tâche n'a pas échoué (ex: coupure réseau pendant la requête)
+            if (task.IsCompleted && !task.IsFaulted && !task.IsCanceled && task.Result.Exists)
             {
                 monVraiPseudo = task.Result.Value.ToString();
             }
@@ -99,12 +116,11 @@ public class MatchmakingManager : MonoBehaviour
             ContinuerRechercheAvecVraiPseudo(monVraiPseudo);
         });
     }
-
     private void ContinuerRechercheAvecVraiPseudo(string monPseudo)
     {
         if (panelMatchmaking != null) panelMatchmaking.SetActive(true);
         if (texteStatut != null) texteStatut.text = T("MM_RECHERCHE");
-        if (texteJoueur1 != null) texteJoueur1.text = $"{monPseudo} ({T("MM_MOI")})";
+        if (texteJoueur1 != null) texteJoueur1.text = $"{monPseudo}\n({T("MM_MOI")})";
         if (texteJoueur2 != null) texteJoueur2.text = T("MM_ATTENTE");
 
         PlayerPrefs.SetString("ModeChoisi", "1v1");
@@ -162,7 +178,7 @@ public class MatchmakingManager : MonoBehaviour
         dbReference.Child("Salons_1v1").Child(idDeMonSalon).Child("etat").SetValueAsync("EnCours");
 
         if (texteJoueur1 != null) texteJoueur1.text = pseudoJoueur1;
-        if (texteJoueur2 != null) texteJoueur2.text = $"{monPseudo} ({T("MM_MOI")})";
+        if (texteJoueur2 != null) texteJoueur2.text = $"{monPseudo}\n({T("MM_MOI")})";
         
         StartCoroutine(CompteAReboursAvantLancement());
     }
@@ -244,14 +260,33 @@ public class MatchmakingManager : MonoBehaviour
 
     public void QuitterEtNettoyerSalon()
     {
+        // 1. Nettoyage du salon sur Firebase
         if (!string.IsNullOrEmpty(idDeMonSalon) && dbReference != null)
         {
             dbReference.Child("Salons_1v1").Child(idDeMonSalon).RemoveValueAsync();
             Debug.Log("🧹 Salon supprimé de Firebase.");
         }
+        
         idDeMonSalon = "";
         monRoleActuel = "";
         if (GameManager.instance != null && GameManager.instance.joueurRb != null) GameManager.instance.joueurRb.isKinematic = false;
+
+        // ==========================================
+        // 2. GESTION DE LA PUBLICITÉ INTERSTITIELLE
+        // ==========================================
+        compteurPubRetour++; // On incrémente le compteur
+
+        if (compteurPubRetour >= 3)
+        {
+            compteurPubRetour = 0; // Remise à zéro
+            if (AdMobManager.instance != null && AdMobManager.instance.IsInterstitialReady())
+            {
+                Debug.Log("📺 Affichage de la pub interstitielle (3ème clic atteint) !");
+                AdMobManager.instance.ShowInterstitialAd();
+            }
+        }
+
+        // 3. Retour au menu (S'exécute après ou pendant la pub selon ton GameManager)
         if (GameManager.instance != null) GameManager.instance.BoutonRetourMenu();
     }
 
@@ -263,6 +298,7 @@ public class MatchmakingManager : MonoBehaviour
 
         if (panelMatchmaking != null) panelMatchmaking.SetActive(false);
 
+        // 1. Nettoyage du salon sur Firebase
         if (!string.IsNullOrEmpty(idDeMonSalon) && dbReference != null)
         {
             dbReference.Child("Salons_1v1").Child(idDeMonSalon).RemoveValueAsync();
@@ -271,15 +307,54 @@ public class MatchmakingManager : MonoBehaviour
 
         idDeMonSalon = "";
         monRoleActuel = "";
+
+        // ==========================================
+        // 2. GESTION DE LA PUBLICITÉ INTERSTITIELLE
+        // ==========================================
+        compteurPubRetour++; // On incrémente le compteur
+
+        if (compteurPubRetour >= 3)
+        {
+            compteurPubRetour = 0; // Remise à zéro
+            if (AdMobManager.instance != null && AdMobManager.instance.IsInterstitialReady())
+            {
+                Debug.Log("📺 Affichage de la pub interstitielle (3ème clic atteint) !");
+                AdMobManager.instance.ShowInterstitialAd();
+            }
+        }
     }
 
-    // 🛡️ NOUVEAU : GESTION DE FERMETURE SAUVAGE (Glissement sur Android)
+    // =================================================================
+    // 🛡️ SÉCURITÉ ANDROID : GESTION DE FERMETURE SAUVAGE (Glissement)
+    // =================================================================
+    
+    // Appelée quand le joueur met le jeu en arrière-plan (Home, Menu des apps...)
+    void OnApplicationPause(bool isPaused)
+    {
+        if (isPaused)
+        {
+            NettoyerSalonEnDernierRecours();
+        }
+    }
+
+    // Appelée quand on quitte le jeu proprement (plus rare sur mobile)
     void OnApplicationQuit()
     {
-        if (!string.IsNullOrEmpty(idDeMonSalon) && dbReference != null)
+        NettoyerSalonEnDernierRecours();
+    }
+
+    private void NettoyerSalonEnDernierRecours()
+    {
+        // On ne détruit le salon QUE si on était en pleine recherche (pas si on est déjà en train de jouer)
+        if (!string.IsNullOrEmpty(idDeMonSalon) && dbReference != null && !matchLance)
         {
-            // Détruit le salon sur Firebase si le joueur ferme l'application violemment en attendant un adversaire
             dbReference.Child("Salons_1v1").Child(idDeMonSalon).RemoveValueAsync();
+            Debug.Log("🧹 Android : Application mise en arrière-plan, Salon annulé et supprimé.");
+            
+            // On réinitialise pour pouvoir chercher à nouveau si le joueur revient sur l'app
+            rechercheEnCours = false;
+            idDeMonSalon = "";
+            monRoleActuel = "";
         }
     }
 }
