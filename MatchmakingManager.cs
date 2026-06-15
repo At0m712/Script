@@ -30,6 +30,11 @@ public class MatchmakingManager : MonoBehaviour
     public TMP_Text texteJoueur1; 
     public TMP_Text texteJoueur2; 
     public TMP_Text texteStatut; 
+    public TMP_Text texteCompteurAttente; // NOUVEAU : UI pour afficher le nombre de joueurs
+
+    // NOUVEAU : Variables pour gérer l'affichage de l'attente de manière sécurisée (Thread principal)
+    private long nombreJoueursEnAttente = 0;
+    private bool majTexteAttente = false;
 
     [Header("Interface de Fin 1v1")]
     public GameObject texteAttenteAdversaire; 
@@ -55,6 +60,9 @@ public class MatchmakingManager : MonoBehaviour
                 dbReference = FirebaseDatabase.GetInstance("https://leaderboardgame-5218c-default-rtdb.europe-west1.firebasedatabase.app/").RootReference;
                 firebaseEstPret = true;
                 
+                // NOUVEAU : On lance l'écoute des salons en attente
+                ActiverEcouteJoueursEnAttente();
+                
                 if (PlayerPrefs.GetInt("AutoStartMatchmaking", 0) == 1)
                 {
                     PlayerPrefs.SetInt("AutoStartMatchmaking", 0);
@@ -65,6 +73,22 @@ public class MatchmakingManager : MonoBehaviour
                 Debug.LogError("Impossible d'initialiser Firebase : " + task.Result);
             }
         });
+    }
+    // NOUVELLE FONCTION COMPLÈTE
+    private void ActiverEcouteJoueursEnAttente()
+    {
+        // On place un listener qui se déclenche à chaque fois que le nombre de salons en attente change
+        dbReference.Child("Salons_1v1").OrderByChild("etat").EqualTo("EnAttente").ValueChanged += (sender, args) =>
+        {
+            if (args.Snapshot != null)
+            {
+                // On récupère le nombre d'enfants (qui correspond au nombre de salons ouverts)
+                nombreJoueursEnAttente = args.Snapshot.ChildrenCount;
+                
+                // On indique à la fonction Update() qu'elle peut rafraîchir l'interface
+                majTexteAttente = true;
+            }
+        };
     }
 
     private string T(string cle)
@@ -205,6 +229,17 @@ public class MatchmakingManager : MonoBehaviour
 
     void Update()
     {
+        // NOUVEAU : Rafraîchissement sécurisé de l'UI pour le nombre de joueurs en attente
+        if (majTexteAttente)
+        {
+            majTexteAttente = false;
+            if (texteCompteurAttente != null)
+            {
+                // Utilisation de la fonction de traduction avec formatage de la variable
+                texteCompteurAttente.text = string.Format(T("MM_JOUEURS_ATTENTE"), nombreJoueursEnAttente);
+            }
+        }
+
         if (declencherCompteARebours)
         {
             declencherCompteARebours = false;
@@ -212,7 +247,6 @@ public class MatchmakingManager : MonoBehaviour
             StartCoroutine(CompteAReboursAvantLancement());
         }
     }
-
     private IEnumerator CompteAReboursAvantLancement()
     {
         rechercheEnCours = false; 
