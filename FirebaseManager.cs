@@ -15,7 +15,6 @@ public class FirebaseManager : MonoBehaviour
     public LigneLeaderboard maLigneFixeBas; 
     public GameObject panelSaisiePseudo;
 
-    // 🚀 NOUVEAU : Le dossier qui contient nos 4 petits boutons
     [Header("Interface Niveaux Speedrun")]
     public GameObject conteneurBoutonsNiveaux; 
 
@@ -39,11 +38,7 @@ public class FirebaseManager : MonoBehaviour
             panelSaisiePseudo.SetActive(!PlayerPrefs.HasKey("MonPseudoFirebase"));
         }
 
-        // 🚀 NOUVEAU : Au démarrage, on est sur l'onglet Classique, donc on cache les boutons Speedrun
-        if (conteneurBoutonsNiveaux != null)
-        {
-            conteneurBoutonsNiveaux.SetActive(false);
-        }
+        if (conteneurBoutonsNiveaux != null) conteneurBoutonsNiveaux.SetActive(false);
     }
 
     public void ActiverManagerApresConnexion(string uid)
@@ -53,21 +48,22 @@ public class FirebaseManager : MonoBehaviour
         FirebaseAnalytics.SetAnalyticsCollectionEnabled(true);
         estConnecte = true;
         
-        Debug.Log("✅ [FirebaseManager] Base de données Firestore prête pour le joueur : " + userId);
+        Debug.Log("✅ [FirebaseManager] Firestore prêt ! Chargement du classement (Serveur)...");
         RecupererClassement();
     }
 
-    // 🚀 NOUVEAU : C'est ici que la magie s'opère quand on clique sur les gros onglets
-    public void ChangerOnglet(bool versSpeedrun)
+    public void AfficherClassementClassique()
     {
-        estEnModeSpeedrun = versSpeedrun;
+        estEnModeSpeedrun = false;
+        if (conteneurBoutonsNiveaux != null) conteneurBoutonsNiveaux.SetActive(false);
+        RecupererClassement();
+    }
 
-        // On affiche les 4 boutons SI on va vers Speedrun, sinon on les cache
-        if (conteneurBoutonsNiveaux != null)
-        {
-            conteneurBoutonsNiveaux.SetActive(versSpeedrun);
-        }
-
+    public void AfficherClassementSpeedrun()
+    {
+        estEnModeSpeedrun = true;
+        indexOngletSpeedrun = 0; 
+        if (conteneurBoutonsNiveaux != null) conteneurBoutonsNiveaux.SetActive(true);
         RecupererClassement();
     }
 
@@ -86,19 +82,9 @@ public class FirebaseManager : MonoBehaviour
 
         Dictionary<string, object> userData = new Dictionary<string, object> { { "nom", pseudoJoueur } };
         
-        DocumentReference docClassique = db.Collection("ClassementClassique").Document(userId);
-        docClassique.GetSnapshotAsync().ContinueWithOnMainThread(task => {
-            if (task.Result.Exists) docClassique.UpdateAsync(userData);
-            else docClassique.SetAsync(userData);
-        });
-
-        for (int i = 0; i < 4; i++)
-        {
-            DocumentReference docSpeedrun = db.Collection("ClassementSpeedrun_" + i).Document(userId);
-            docSpeedrun.GetSnapshotAsync().ContinueWithOnMainThread(task => {
-                if (task.Result.Exists) docSpeedrun.UpdateAsync(userData);
-            });
-        }
+        // On utilise SetOptions.MergeAll pour ne jamais effacer les autres données du joueur
+        db.Collection("ClassementClassique").Document(userId).SetAsync(userData, SetOptions.MergeAll);
+        db.Collection("ClassementSpeedrun").Document(userId).SetAsync(userData, SetOptions.MergeAll);
     }
 
     public void EnvoyerScore(int points)
@@ -108,7 +94,8 @@ public class FirebaseManager : MonoBehaviour
         string nomJoueur = PlayerPrefs.GetString("MonPseudoFirebase", "Joueur");
         DocumentReference docRef = db.Collection("ClassementClassique").Document(userId);
         
-        docRef.GetSnapshotAsync().ContinueWithOnMainThread(task => {
+        // 🚀 FORCE SERVER : On ignore le cache pour éviter les bugs de lecture
+        docRef.GetSnapshotAsync(Source.Server).ContinueWithOnMainThread(task => {
             if (task.IsFaulted) return;
 
             DocumentSnapshot snapshot = task.Result;
@@ -116,20 +103,17 @@ public class FirebaseManager : MonoBehaviour
                 { "nom", nomJoueur }, { "score", points }
             };
 
+            long ancienScore = 0;
             if (snapshot.Exists)
             {
-                long ancienScore = 0;
                 var dict = snapshot.ToDictionary();
                 if (dict.ContainsKey("score")) ancienScore = Convert.ToInt64(dict["score"]);
-
-                if (points > ancienScore) 
-                {
-                    docRef.UpdateAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
-                }
             }
-            else
+
+            if (points > ancienScore) 
             {
-                docRef.SetAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
+                // 🚀 MERGE ALL : Met à jour ou crée sans effacer le reste
+                docRef.SetAsync(data, SetOptions.MergeAll).ContinueWithOnMainThread(t => { RecupererClassement(); });
             }
         });
     }
@@ -141,30 +125,32 @@ public class FirebaseManager : MonoBehaviour
         string nomJoueur = PlayerPrefs.GetString("MonPseudoFirebase", "Joueur");
         long tempsEnCentiemes = Mathf.FloorToInt(secondes * 100f);
         
-        DocumentReference docRef = db.Collection("ClassementSpeedrun_" + indexNiveau).Document(userId);
+        DocumentReference docRef = db.Collection("ClassementSpeedrun").Document(userId);
+        string nomDuChampTemps = "temps_" + indexNiveau;
 
-        docRef.GetSnapshotAsync().ContinueWithOnMainThread(task => {
+        // 🚀 FORCE SERVER
+        docRef.GetSnapshotAsync(Source.Server).ContinueWithOnMainThread(task => {
             if (task.IsFaulted) return;
 
             DocumentSnapshot snapshot = task.Result;
             Dictionary<string, object> data = new Dictionary<string, object> {
-                { "nom", nomJoueur }, { "temps", tempsEnCentiemes }
+                { "nom", nomJoueur }, 
+                { nomDuChampTemps, tempsEnCentiemes }
             };
+
+            long ancienTemps = long.MaxValue; 
 
             if (snapshot.Exists)
             {
-                long ancienTemps = long.MaxValue; 
                 var dict = snapshot.ToDictionary();
-                if (dict.ContainsKey("temps")) ancienTemps = Convert.ToInt64(dict["temps"]);
-
-                if (tempsEnCentiemes < ancienTemps) 
-                {
-                    docRef.UpdateAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
-                }
+                if (dict.ContainsKey(nomDuChampTemps)) ancienTemps = Convert.ToInt64(dict[nomDuChampTemps]);
             }
-            else
+
+            // 🚀 CORRECTION : Si le joueur a un vieux temps buggé à 0, on l'écrase obligatoirement
+            if (tempsEnCentiemes < ancienTemps || ancienTemps <= 0) 
             {
-                docRef.SetAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
+                // 🚀 MERGE ALL : Ajoute le temps de ce niveau SANS effacer les autres niveaux existants !
+                docRef.SetAsync(data, SetOptions.MergeAll).ContinueWithOnMainThread(t => { RecupererClassement(); });
             }
         });
     }
@@ -173,15 +159,28 @@ public class FirebaseManager : MonoBehaviour
     {
         if (!estConnecte || db == null) return;
 
-        string collectionName = estEnModeSpeedrun ? "ClassementSpeedrun_" + indexOngletSpeedrun : "ClassementClassique";
-        string champTri = estEnModeSpeedrun ? "temps" : "score";
+        string collectionName = estEnModeSpeedrun ? "ClassementSpeedrun" : "ClassementClassique";
+        string champTri = estEnModeSpeedrun ? "temps_" + indexOngletSpeedrun : "score";
         
         Query query = db.Collection(collectionName);
-        if (estEnModeSpeedrun) query = query.OrderBy(champTri).Limit(50);
-        else query = query.OrderByDescending(champTri).Limit(50);
+        
+        if (estEnModeSpeedrun) 
+        {
+            // 🚀 FILTRE MAGIQUE : Ignore automatiquement tous les scores buggés qui sont à 0
+            query = query.WhereGreaterThan(champTri, 0).OrderBy(champTri).Limit(50);
+        }
+        else 
+        {
+            query = query.OrderByDescending(champTri).Limit(50);
+        }
 
-        query.GetSnapshotAsync().ContinueWithOnMainThread(task => {
-            if (task.IsFaulted || task.IsCanceled) return;
+        // 🚀 FORCE SERVER : Lis la vraie base de données, règle le problème des scores fantômes !
+        query.GetSnapshotAsync(Source.Server).ContinueWithOnMainThread(task => {
+            if (task.IsFaulted || task.IsCanceled) 
+            {
+                Debug.LogError("🚨 [Firebase] Erreur chargement Leaderboard : " + task.Exception);
+                return;
+            }
 
             foreach (Transform enfant in conteneurClassement) Destroy(enfant.gameObject);
 
@@ -192,12 +191,15 @@ public class FirebaseManager : MonoBehaviour
             foreach (DocumentSnapshot document in task.Result.Documents)
             {
                 Dictionary<string, object> data = document.ToDictionary();
+                
                 string nomAffiche = data.ContainsKey("nom") ? data["nom"].ToString() : "Joueur";
                 bool cEstMoi = (document.Id == userId);
                 string texteScore = "";
                 
-                if (estEnModeSpeedrun && data.ContainsKey("temps")) texteScore = FormaterScoreEnChrono(Convert.ToInt64(data["temps"]));
-                else if (!estEnModeSpeedrun && data.ContainsKey("score")) texteScore = data["score"].ToString() + " pts";
+                if (estEnModeSpeedrun && data.ContainsKey(champTri)) 
+                    texteScore = FormaterScoreEnChrono(Convert.ToInt64(data[champTri]));
+                else if (!estEnModeSpeedrun && data.ContainsKey("score")) 
+                    texteScore = data["score"].ToString() + " pts";
 
                 if (cEstMoi) { monRang = rangActuel; monScoreTexte = texteScore; }
 
