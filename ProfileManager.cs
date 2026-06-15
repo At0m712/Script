@@ -4,7 +4,7 @@ using Firebase.Database;
 using Firebase.Extensions;
 using System.Collections;
 using Firebase.Auth; 
-using System; // 🔴 INDISPENSABLE POUR LA LECTURE SÉCURISÉE DES DONNÉES
+using System; 
 
 public class ProfileManager : MonoBehaviour
 {
@@ -22,9 +22,10 @@ public class ProfileManager : MonoBehaviour
     public ProfilJoueur monProfil = new ProfilJoueur();
 
     private DatabaseReference dbReference;
-    
-    // 🛡️ CORRECTION : L'ID est vide par défaut, on attend impérativement l'autorisation Firebase !
     private string idUniqueAppareil = ""; 
+    
+    // 🛡️ NOUVEAU : Ce booléen bloque toute sauvegarde tant que Firebase n'est pas 100% prêt
+    private bool profilEstSynchronise = false; 
 
     void Awake()
     {
@@ -32,9 +33,6 @@ public class ProfileManager : MonoBehaviour
         {
             instance = this;
             DontDestroyOnLoad(gameObject); 
-            
-            // 🧹 NETTOYAGE : J'ai complètement supprimé l'ancien code SystemInfo.deviceUniqueIdentifier
-            // C'est lui qui s'emmêlait les pinceaux avec le vrai compte et créait des dossiers en double !
         }
         else
         {
@@ -66,17 +64,17 @@ public class ProfileManager : MonoBehaviour
     {
         Debug.Log("⏳ [ProfileManager] Récupération du jeton d'authentification...");
 
-        // 🛡️ OPTIMISATION : Si Firebase a déjà authentifié le joueur en arrière-plan, on récupère direct son ID !
         if (FirebaseAuth.DefaultInstance != null && FirebaseAuth.DefaultInstance.CurrentUser != null)
         {
             idUniqueAppareil = FirebaseAuth.DefaultInstance.CurrentUser.UserId;
             PlayerPrefs.SetString("MonIDFirebase", idUniqueAppareil);
             PlayerPrefs.Save();
-            InitialiserEtSynchroniser();
+            
+            // 🛡️ CORRECTION : On laisse 1 seconde à la base de données pour se synchroniser avec l'Auth
+            Invoke("InitialiserEtSynchroniser", 1f);
             return;
         }
 
-        // Sinon, on sécurise une connexion 
         FirebaseAuth.DefaultInstance.SignInAnonymouslyAsync().ContinueWithOnMainThread(task =>
         {
             if (task.IsCanceled || task.IsFaulted)
@@ -85,13 +83,14 @@ public class ProfileManager : MonoBehaviour
                 return;
             }
 
-            // On récupère le VRAI jeton validé par le serveur
             idUniqueAppareil = task.Result.User.UserId;
             PlayerPrefs.SetString("MonIDFirebase", idUniqueAppareil);
             PlayerPrefs.Save();
             
             Debug.Log("📂 [ProfileManager] Authentification 100% validée avec ID : " + idUniqueAppareil);
-            InitialiserEtSynchroniser();
+            
+            // 🛡️ CORRECTION : Même chose ici, on patiente avant de requêter
+            Invoke("InitialiserEtSynchroniser", 1f);
         });
     }
 
@@ -105,17 +104,18 @@ public class ProfileManager : MonoBehaviour
         }
         monProfil.pseudo = PlayerPrefs.GetString("MonPseudoFirebase", "joueur");
 
-        if (string.IsNullOrEmpty(idUniqueAppareil)) return; // Sécurité anti-dossier fantôme
+        if (string.IsNullOrEmpty(idUniqueAppareil)) return; 
 
         Debug.Log("📍 [ProfileManager] 4. Envoi de la requête de lecture au serveur...");
 
         dbReference.Child("Joueurs").Child(idUniqueAppareil).GetValueAsync().ContinueWithOnMainThread(task =>
         {
+            // 🛡️ CORRECTION MAJEURE : On gère le refus de permission (Internal task faulted).
+            // Au lieu d'écraser la sauvegarde en pensant qu'elle n'existe pas, on patiente et on retente !
             if (task.IsFaulted || task.IsCanceled)
             {
-                Debug.LogWarning("⚠️ Lecture Firebase bloquée (IsFaulted). Création forcée ! Détail : " + task.Exception);
-                EnvoyerVersFirebase();
-                StartCoroutine(TraqueurAutomatiqueDeChangements());
+                Debug.LogWarning("⚠️ Lecture bloquée (Permissions ou Jeton en cours de validation). Réessai dans 1 seconde...");
+                Invoke("InitialiserEtSynchroniser", 1f);
                 return;
             }
 
@@ -124,8 +124,6 @@ public class ProfileManager : MonoBehaviour
                 Debug.Log("📍 [ProfileManager] 5. Profil cloud trouvé. Déchiffrage des données...");
                 ProfilJoueur profilCloud = new ProfilJoueur();
                 
-                // 🛡️ CORRECTION MAGIQUE : On force la lecture manuelle nœud par nœud.
-                // Cela empêche JsonUtility de planter le jeu quand tu modifies le nombre de pièces à la main !
                 try
                 {
                     if (task.Result.HasChild("nbPieces")) 
@@ -153,6 +151,10 @@ public class ProfileManager : MonoBehaviour
                 EnvoyerVersFirebase();
             }
 
+            // 🟢 FEU VERT : La base de données a répondu favorablement, on autorise les écritures !
+            profilEstSynchronise = true;
+
+            StopAllCoroutines();
             StartCoroutine(TraqueurAutomatiqueDeChangements());
         });
     }
@@ -193,7 +195,8 @@ public class ProfileManager : MonoBehaviour
                 ilYaEuUnChangement = true;
             }
 
-            if (ilYaEuUnChangement)
+            // 🛡️ SÉCURITÉ : On n'écrit jamais sur le Cloud si la synchro initiale n'est pas passée
+            if (ilYaEuUnChangement && profilEstSynchronise)
             {
                 EnvoyerVersFirebase();
             }
@@ -202,7 +205,6 @@ public class ProfileManager : MonoBehaviour
 
     private void EnvoyerVersFirebase()
     {
-        // 🛡️ On s'assure de ne JAMAIS envoyer de données si l'ID Firebase n'est pas rempli !
         if (dbReference != null && !string.IsNullOrEmpty(idUniqueAppareil))
         {
             string jsonProfil = JsonUtility.ToJson(monProfil);
@@ -223,7 +225,6 @@ public class ProfileManager : MonoBehaviour
 
     private void RestaurerSauvegardeSiBesoin(ProfilJoueur profilCloud)
     {
-        // 1. Restaurer les pièces et scores dans la mémoire locale
         SaveManager.instance.data.argentTotal = profilCloud.nbPieces;
         SaveManager.instance.data.meilleurScore = profilCloud.meilleurScoreClassique;
         SaveManager.instance.data.meilleurTempsSpeedrun = profilCloud.meilleurChronoSpeedrun / 100f;
@@ -232,7 +233,6 @@ public class ProfileManager : MonoBehaviour
         monProfil.meilleurScoreClassique = profilCloud.meilleurScoreClassique;
         monProfil.meilleurChronoSpeedrun = profilCloud.meilleurChronoSpeedrun;
 
-        // 2. Restaurer et appliquer le Pseudo
         if (!string.IsNullOrEmpty(profilCloud.pseudo) && profilCloud.pseudo != "joueur")
         {
             PlayerPrefs.SetString("MonPseudoFirebase", profilCloud.pseudo);
@@ -247,7 +247,6 @@ public class ProfileManager : MonoBehaviour
 
         SaveManager.instance.SauvegarderPartie();
 
-        // 3. Synchroniser le jeu en direct
         if (GameManager.instance != null)
         {
             GameManager.argentTotal = profilCloud.nbPieces; 
@@ -260,15 +259,12 @@ public class ProfileManager : MonoBehaviour
         }
     }
 
-    // =================================================================
-    // 🛡️ SÉCURITÉ ANDROID : SAUVEGARDE D'URGENCE
-    // =================================================================
-    
     void OnApplicationPause(bool isPaused)
     {
-        if (isPaused)
+        // 🛡️ SÉCURITÉ : La mise en pause au démarrage du jeu ne forcera plus un faux envoi
+        if (isPaused && profilEstSynchronise)
         {
-            Debug.Log("📱 Android : Mise en pause détectée, sauvegarde d'urgence forcée !");
+            Debug.Log("📱 Android : Mise en pause détectée, sauvegarde d'urgence autorisée !");
             
             if (SaveManager.instance != null)
             {
