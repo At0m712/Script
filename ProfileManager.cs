@@ -72,15 +72,13 @@ public class ProfileManager : MonoBehaviour
             {
                 Debug.Log("📍 [ProfileManager] 2. Dépendances Firebase OK !");
 
-                // 🛑 SÉCURITÉ DEBUG : On désactive temporairement le cache hors-ligne 
-                // car c'est souvent lui qui fait planter silencieusement l'Éditeur Unity !
-                // FirebaseDatabase.DefaultInstance.SetPersistenceEnabled(true);
-
-                // Création de la référence
                 dbReference = FirebaseDatabase.GetInstance("https://leaderboardgame-5218c-default-rtdb.europe-west1.firebasedatabase.app/").RootReference;
                 
-                Debug.Log("📍 [ProfileManager] 3. dbReference créée. Appel de la synchronisation...");
-                InitialiserEtSynchroniser();
+                Debug.Log("📍 [ProfileManager] 3. dbReference créée. Attente de l'Authentification...");
+                
+                // 🔴 CORRECTION CRITIQUE : On appelle la Coroutine au lieu de synchroniser directement !
+                // Cela va écraser le faux ID (SystemInfo) par le VRAI ID Firebase.
+                StartCoroutine(AttendreAuthentification());
             } 
             else 
             {

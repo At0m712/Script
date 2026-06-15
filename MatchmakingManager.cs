@@ -100,7 +100,7 @@ public class MatchmakingManager : MonoBehaviour
     {
         if (rechercheEnCours) return;
 
-        // 🛡️ SÉCURITÉ 1 : Vérification de la connexion Internet (Syndrome du métro)
+        // 🛡️ SÉCURITÉ 1 : Vérification de la connexion Internet
         if (Application.internetReachability == NetworkReachability.NotReachable)
         {
             Debug.LogWarning("Aucune connexion Internet détectée !");
@@ -112,9 +112,15 @@ public class MatchmakingManager : MonoBehaviour
             return;
         }
 
-        if (!firebaseEstPret || dbReference == null)
+        // 🔴 CORRECTION 1 : On vérifie aussi que l'ID Firebase existe (que le login est terminé)
+        if (!firebaseEstPret || dbReference == null || !PlayerPrefs.HasKey("MonIDFirebase"))
         {
-            Debug.LogWarning("⏳ Firebase se connecte, réessaie dans 1 seconde !");
+            Debug.LogWarning("⏳ Firebase s'authentifie, réessaie dans 1 seconde !");
+            if (panelMatchmaking != null) panelMatchmaking.SetActive(true);
+            if (texteStatut != null) texteStatut.text = "Connexion au serveur...";
+            
+            // On retente automatiquement après 1 seconde
+            Invoke("ChercherUnePartie1v1", 1f);
             return;
         }
 
@@ -122,10 +128,9 @@ public class MatchmakingManager : MonoBehaviour
         matchLance = false;
         declencherCompteARebours = false;
 
-        // 🛡️ SÉCURITÉ 2 : Nettoyage de l'ID Android
-        string idAppareilSecurise = SystemInfo.deviceUniqueIdentifier.Replace(".", "").Replace("#", "").Replace("$", "").Replace("[", "").Replace("]", "");
+        // 🔴 CORRECTION 2 : On utilise le vrai ID Firebase, fini les plantages liés à Android 10+ !
+        string idAppareilSecurise = PlayerPrefs.GetString("MonIDFirebase");
         
-        // 🛡️ CORRECTION : Fallback sur le pseudo local en cas de problème de récupération serveur
         dbReference.Child("Joueurs").Child(idAppareilSecurise).Child("pseudo").GetValueAsync().ContinueWithOnMainThread(task =>
         {
             // On charge le pseudo local par défaut en sécurité
