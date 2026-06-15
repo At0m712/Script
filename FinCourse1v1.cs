@@ -1,7 +1,7 @@
 using UnityEngine;
 using Firebase.Database;
 using Firebase.Extensions;
-using System.Globalization;
+using System; // REMPLACE System.Globalization pour utiliser Convert
 
 public class FinCourse1v1 : MonoBehaviour
 {
@@ -76,7 +76,8 @@ public class FinCourse1v1 : MonoBehaviour
 
             if (task.IsCompleted && task.Result.Exists)
             {
-                float tempsAdversaire = float.Parse(task.Result.Value.ToString(), CultureInfo.InvariantCulture);
+                // 🛡️ CORRECTION : Convert.ToSingle lit directement le chiffre sans passer par du texte (adieu le bug de la virgule)
+                float tempsAdversaire = Convert.ToSingle(task.Result.Value);
                 ComparerScores(monTemps, tempsAdversaire);
             }
             else
@@ -97,7 +98,8 @@ public class FinCourse1v1 : MonoBehaviour
         {
             if (args.Snapshot.Exists)
             {
-                float tempsAdversaire = float.Parse(args.Snapshot.Value.ToString(), CultureInfo.InvariantCulture);
+                // 🛡️ CORRECTION : Pareil ici pour le temps qui arrive en direct
+                float tempsAdversaire = Convert.ToSingle(args.Snapshot.Value);
                 if (tempsAdversaire > 0f)
                 {
                     Debug.Log("L'adversaire vient de finir !");
@@ -127,15 +129,9 @@ public class FinCourse1v1 : MonoBehaviour
             texteFinal = "ÉGALITÉ PARFAITE !\n" + texteFinal;
         }
 
-        // ... (le début de la fonction avec les conditions de victoire/défaite reste pareil)
-
-        // 👉 LA CORRECTION EST ICI :
         if (MatchmakingManager.instance.texteResultatDetaille != null) 
         {
-            // 1. On allume le texte (vu qu'il était caché et indépendant)
             MatchmakingManager.instance.texteResultatDetaille.gameObject.SetActive(true);
-            
-            // 2. On écrit les temps dedans
             MatchmakingManager.instance.texteResultatDetaille.text = texteFinal;
         }
     }
