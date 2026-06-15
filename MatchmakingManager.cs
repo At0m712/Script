@@ -81,11 +81,9 @@ public class MatchmakingManager : MonoBehaviour
         {
             Debug.LogWarning("Aucune connexion Internet détectée !");
             
-            // On affiche le panneau pour prévenir le joueur
             if (panelMatchmaking != null) panelMatchmaking.SetActive(true);
             if (texteStatut != null) texteStatut.text = "Pas de connexion Internet...";
             
-            // On ferme le panneau et on annule tout automatiquement après 2 secondes
             Invoke("AnnulerRecherche", 2f); 
             return;
         }
@@ -103,14 +101,19 @@ public class MatchmakingManager : MonoBehaviour
         // 🛡️ SÉCURITÉ 2 : Nettoyage de l'ID Android
         string idAppareilSecurise = SystemInfo.deviceUniqueIdentifier.Replace(".", "").Replace("#", "").Replace("$", "").Replace("[", "").Replace("]", "");
         
+        // 🛡️ CORRECTION : Fallback sur le pseudo local en cas de problème de récupération serveur
         dbReference.Child("Joueurs").Child(idAppareilSecurise).Child("pseudo").GetValueAsync().ContinueWithOnMainThread(task =>
         {
-            string monVraiPseudo = "Joueur"; 
+            // On charge le pseudo local par défaut en sécurité
+            string monVraiPseudo = PlayerPrefs.GetString("MonPseudoFirebase", "Joueur"); 
 
-            // On vérifie que la tâche n'a pas échoué (ex: coupure réseau pendant la requête)
             if (task.IsCompleted && !task.IsFaulted && !task.IsCanceled && task.Result.Exists)
             {
                 monVraiPseudo = task.Result.Value.ToString();
+            }
+            else if (task.IsFaulted)
+            {
+                Debug.LogWarning("Impossible de récupérer le pseudo sur Firebase (Règles ou réseau). Utilisation du pseudo local.");
             }
 
             ContinuerRechercheAvecVraiPseudo(monVraiPseudo);
@@ -329,11 +332,47 @@ public class MatchmakingManager : MonoBehaviour
     // =================================================================
     
     // Appelée quand le joueur met le jeu en arrière-plan (Home, Menu des apps...)
+    // =================================================================
+    // 🛡️ SÉCURITÉ MOBILE : GESTION DE LA MISE EN ARRIÈRE-PLAN
+    // =================================================================
+    
+    // Appelée quand le joueur met le jeu en arrière-plan (Home, Menu des apps...)
     void OnApplicationPause(bool isPaused)
     {
+        // Dès que l'application passe en arrière-plan (même 1 seconde)
         if (isPaused)
         {
-            NettoyerSalonEnDernierRecours();
+            // Si le joueur était en pleine recherche de partie
+            if (rechercheEnCours)
+            {
+                Debug.Log("📱 Mise en pause détectée : Annulation de la recherche 1v1 et fermeture de l'UI.");
+                
+                // 1. On appelle ta fonction existante pour être sûr que le salon Firebase est bien supprimé 
+                // et que le compteur de pub est mis à jour
+                AnnulerRecherche();
+
+                // 2. Sécurité visuelle : on force la désactivation immédiate du panel de matchmaking
+                if (panelMatchmaking != null)
+                {
+                    panelMatchmaking.SetActive(false);
+                }
+
+                // 3. On réinitialise les sécurités locales pour éviter les bugs au retour sur l'app
+                rechercheEnCours = false;
+                matchLance = false;
+                declencherCompteARebours = false;
+                
+                if (texteStatut != null) 
+                {
+                    texteStatut.text = "";
+                }
+            }
+            else
+            {
+                // Si le joueur n'était pas en recherche, on utilise quand même le nettoyage de secours 
+                // au cas où un salon fantôme traînerait.
+                NettoyerSalonEnDernierRecours();
+            }
         }
     }
 
