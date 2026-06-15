@@ -23,7 +23,6 @@ public class PlayerData
     public int indexQueteJour = -1;        
     public int progressionQuete = 0;       
     public bool recompenseRecuperee = false; 
-    
     public int objectifQueteJour = 0;   
     public int recompenseQueteJour = 0; 
     
@@ -42,53 +41,64 @@ public class PlayerData
 public class SaveManager : MonoBehaviour
 {
     public static SaveManager instance;
-    
     public PlayerData data;
+    
     private string saveFilePath;
-    private byte[] cleAES; // Notre clé unique sécurisée en mémoire
+    private byte[] cleAES; 
 
     void Awake()
     {
-        if (instance == null)
-        {
-            instance = this;
-            DontDestroyOnLoad(gameObject);
-        }
-        else
-        {
-            Destroy(gameObject);
-            return;
-        }
+        if (instance == null) { instance = this; DontDestroyOnLoad(gameObject); }
+        else { Destroy(gameObject); return; }
 
         saveFilePath = Application.persistentDataPath + "/joueurData.json";
         InitialiserCleSecurite();
         ChargerPartie();
     }
 
-    // --- 🔒 NOUVEAU SYSTÈME ANTI-PERTE DE DONNÉES 🔒 ---
     private void InitialiserCleSecurite()
     {
-        // 1. On cherche la clé secrète du joueur. Si elle n'existe pas, on la crée.
         string secretJoueur = PlayerPrefs.GetString("CleSecreteJoueur", "");
         if (string.IsNullOrEmpty(secretJoueur))
         {
-            secretJoueur = Guid.NewGuid().ToString(); // Génère un ID unique indestructible
+            secretJoueur = Guid.NewGuid().ToString();
             PlayerPrefs.SetString("CleSecreteJoueur", secretJoueur);
             PlayerPrefs.Save();
         }
 
-        // 2. On transforme ce secret en une vraie clé de cryptage AES (32 octets)
         using (SHA256 sha256 = SHA256.Create())
         {
             cleAES = sha256.ComputeHash(Encoding.UTF8.GetBytes(secretJoueur + "MonJeuSecret2026"));
         }
     }
 
+    // Fonction classique de sauvegarde
     public void SauvegarderPartie()
     {
         string json = JsonUtility.ToJson(data);
-        byte[] donneesCryptees = Crypter(json);
-        File.WriteAllBytes(saveFilePath, donneesCryptees);
+        File.WriteAllBytes(saveFilePath, Crypter(json));
+
+        // NOUVEAU : On envoie instantanément la copie au Cloud !
+        if (ProfileManager.instance != null)
+        {
+            ProfileManager.instance.PousserSauvegardeVersCloud(json);
+        }
+    }
+
+    // NOUVEAU : Le Cloud utilise cette fonction pour écraser les données locales
+    public void EcraserAvecDonneesCloud(string jsonCloud)
+    {
+        try
+        {
+            data = JsonUtility.FromJson<PlayerData>(jsonCloud);
+            // On sauvegarde localement la version du cloud pour pouvoir y jouer hors-ligne
+            File.WriteAllBytes(saveFilePath, Crypter(jsonCloud));
+            Debug.Log("☁️ [SaveManager] Données locales écrasées par le Serveur avec succès !");
+        }
+        catch(Exception e)
+        {
+            Debug.LogError("🚨 Erreur lors de l'écrasement des données Cloud : " + e.Message);
+        }
     }
 
     public void ChargerPartie()
@@ -101,11 +111,10 @@ public class SaveManager : MonoBehaviour
                 string jsonClair = Decrypter(fichierComplet);
                 data = JsonUtility.FromJson<PlayerData>(jsonClair);
             }
-            catch (Exception e)
-            {
-                Debug.LogWarning("🚨 Erreur de lecture ou triche détectée. Remise à zéro. Détail : " + e.Message);
-                data = new PlayerData();
-                SauvegarderPartie();
+            catch 
+            { 
+                data = new PlayerData(); 
+                SauvegarderPartie(); 
             }
         }
         else
@@ -120,15 +129,11 @@ public class SaveManager : MonoBehaviour
         using (Aes aesAlg = Aes.Create())
         {
             aesAlg.Key = cleAES;
-            aesAlg.GenerateIV(); // Génère un nouveau cadenas aléatoire (IV) à chaque sauvegarde
-
+            aesAlg.GenerateIV(); 
             ICryptoTransform encryptor = aesAlg.CreateEncryptor(aesAlg.Key, aesAlg.IV);
-
             using (MemoryStream msEncrypt = new MemoryStream())
             {
-                // On écrit le cadenas (IV) au tout début du fichier pour pouvoir l'ouvrir plus tard (16 octets)
                 msEncrypt.Write(aesAlg.IV, 0, aesAlg.IV.Length);
-
                 using (CryptoStream csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
                 {
                     using (StreamWriter swEncrypt = new StreamWriter(csEncrypt))
@@ -136,7 +141,7 @@ public class SaveManager : MonoBehaviour
                         swEncrypt.Write(texteEnClair);
                     }
                 }
-                return msEncrypt.ToArray(); // Retourne le fichier complet
+                return msEncrypt.ToArray(); 
             }
         }
     }
@@ -146,15 +151,10 @@ public class SaveManager : MonoBehaviour
         using (Aes aesAlg = Aes.Create())
         {
             aesAlg.Key = cleAES;
-
-            // On lit les 16 premiers octets pour retrouver le cadenas (IV)
             byte[] iv = new byte[16];
             Array.Copy(fichierComplet, 0, iv, 0, iv.Length);
             aesAlg.IV = iv;
-
             ICryptoTransform decryptor = aesAlg.CreateDecryptor(aesAlg.Key, aesAlg.IV);
-
-            // On décrypte le reste du fichier (en sautant les 16 premiers octets de l'IV)
             using (MemoryStream msDecrypt = new MemoryStream(fichierComplet, 16, fichierComplet.Length - 16))
             {
                 using (CryptoStream csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read))

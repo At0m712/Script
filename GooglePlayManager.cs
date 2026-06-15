@@ -1,36 +1,67 @@
 using UnityEngine;
 using GooglePlayGames;
 using GooglePlayGames.BasicApi;
+using Firebase.Auth;
+using Firebase.Extensions;
 
 public class GooglePlayManager : MonoBehaviour
 {
-    void Start()
+    public static GooglePlayManager instance;
+    private FirebaseAuth auth;
+
+    void Awake()
     {
-        // 1. On active le plugin Google Play Games au lancement
-        PlayGamesPlatform.Activate();
-        
-        // 2. On lance la tentative de connexion
-        ConnexionGooglePlay();
+        if (instance == null) instance = this;
     }
 
-    public void ConnexionGooglePlay()
+    void Start()
     {
-        // Demande à Google de connecter l'utilisateur
+        // On active Google Play Games
+        PlayGamesPlatform.Activate();
+    }
+
+    // Cette fonction sera appelée par le ProfileManager quand Firebase sera prêt
+    public void LancerConnexionGoogleEtFirebase(FirebaseAuth firebaseAuth)
+    {
+        auth = firebaseAuth;
         PlayGamesPlatform.Instance.Authenticate(ProcessAuthentication);
     }
 
-    // Cette fonction complète gère le résultat de la connexion
     internal void ProcessAuthentication(SignInStatus status)
     {
         if (status == SignInStatus.Success)
         {
-            // Si ça marche, on affiche un message dans la console
-            Debug.Log("Connexion Google Play réussie ! Bienvenue : " + Social.localUser.userName);
+            Debug.Log("✅ [Google Play] Connecté ! Joueur : " + Social.localUser.userName);
+            
+            // On demande le code serveur pour le donner à Firebase
+            PlayGamesPlatform.Instance.RequestServerSideAccess(true, codeAuth => {
+                ConnexionFirebaseAvecGoogle(codeAuth);
+            });
         }
         else
         {
-            // Si ça échoue, on affiche l'erreur
-            Debug.Log("Échec de la connexion. Statut : " + status);
+            Debug.LogWarning("⚠️ [Google Play] Échec de connexion. Statut : " + status + ". Connexion anonyme en secours...");
+            // Si le joueur refuse ou n'a pas internet, on tente une connexion anonyme
+            if (ProfileManager.instance != null) ProfileManager.instance.ConnecterAnonymement();
         }
+    }
+
+    private void ConnexionFirebaseAvecGoogle(string codeAuth)
+    {
+        Credential credential = PlayGamesAuthProvider.GetCredential(codeAuth);
+
+        auth.SignInAndRetrieveDataWithCredentialAsync(credential).ContinueWithOnMainThread(task => {
+            if (task.IsCanceled || task.IsFaulted)
+            {
+                Debug.LogError("🚨 [Firebase] Erreur de lien avec Google : " + task.Exception);
+                if (ProfileManager.instance != null) ProfileManager.instance.ConnecterAnonymement();
+                return;
+            }
+
+            Debug.Log("✅ [Firebase] Joueur lié et authentifié avec succès ! UID : " + task.Result.User.UserId);
+            
+            // On lance la synchronisation de la base de données
+            if (ProfileManager.instance != null) ProfileManager.instance.DemarrerSynchronisation(task.Result.User.UserId);
+        });
     }
 }
