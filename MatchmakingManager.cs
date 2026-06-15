@@ -5,6 +5,7 @@ using Firebase.Extensions;
 using TMPro;
 using System.Collections;
 using UnityEngine.Localization.Settings; 
+using Firebase.Auth; // 🔴 À AJOUTER EN HAUT DU SCRIPT
 
 public class MatchmakingManager : MonoBehaviour
 {
@@ -112,8 +113,8 @@ public class MatchmakingManager : MonoBehaviour
             return;
         }
 
-        // 🔴 CORRECTION 1 : On vérifie aussi que l'ID Firebase existe (que le login est terminé)
-        if (!firebaseEstPret || dbReference == null || !PlayerPrefs.HasKey("MonIDFirebase"))
+        // 🔴 CORRECTION : On vérifie que Firebase Auth est VRAIMENT prêt et connecté !
+        if (!firebaseEstPret || dbReference == null || FirebaseAuth.DefaultInstance == null || FirebaseAuth.DefaultInstance.CurrentUser == null)
         {
             Debug.LogWarning("⏳ Firebase s'authentifie, réessaie dans 1 seconde !");
             if (panelMatchmaking != null) panelMatchmaking.SetActive(true);
@@ -128,8 +129,8 @@ public class MatchmakingManager : MonoBehaviour
         matchLance = false;
         declencherCompteARebours = false;
 
-        // 🔴 CORRECTION 2 : On utilise le vrai ID Firebase, fini les plantages liés à Android 10+ !
-        string idAppareilSecurise = PlayerPrefs.GetString("MonIDFirebase");
+        // 🔴 On utilise le jeton d'authentification direct
+        string idAppareilSecurise = FirebaseAuth.DefaultInstance.CurrentUser.UserId;
         
         dbReference.Child("Joueurs").Child(idAppareilSecurise).Child("pseudo").GetValueAsync().ContinueWithOnMainThread(task =>
         {
