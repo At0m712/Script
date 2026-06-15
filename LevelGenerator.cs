@@ -5,8 +5,9 @@ public class LevelGenerator : MonoBehaviour
 {
     public static LevelGenerator instance;
 
+    // 🚀 NOUVEAU : C'est maintenant un tableau de Prefabs ! (Mettez Size = 4 dans Unity)
     [Header("Mode Speedrun")]
-    public GameObject prefabNiveauSpeedrun; 
+    public GameObject[] prefabsNiveauxSpeedrun; 
 
     [Header("Modules")]
     public GameObject[] modulesPrefabs;
@@ -29,30 +30,36 @@ public class LevelGenerator : MonoBehaviour
     
     public GateController porteActuelle; 
 
-    // --- NOUVEAU : Le dossier virtuel qui va contenir la route ---
     private GameObject conteneurNiveau; 
 
     void Awake() { if (instance == null) instance = this; }
 
     void Start()
     {
-        // On crée un dossier vide "virtuel" dans la scène dès le début
         conteneurNiveau = new GameObject("Dossier_Niveau_Classique");
 
         string modeChoisi = PlayerPrefs.GetString("ModeChoisi", "Normal");
 
         if (modeChoisi == "Speedrun")
         {
-            if (prefabNiveauSpeedrun != null)
+            // 🚀 NOUVEAU : On récupère le niveau sélectionné dans le menu (0, 1, 2 ou 3)
+            int indexNiveau = PlayerPrefs.GetInt("NiveauSpeedrunActuel", 0);
+
+            // On vérifie que le tableau contient bien vos prefabs et que l'index existe
+            if (prefabsNiveauxSpeedrun != null && prefabsNiveauxSpeedrun.Length > indexNiveau)
             {
-                // 👇 LA CORRECTION EST ICI : On instancie l'objet et on le range dans le conteneur ! 👇
-                GameObject niveauSpeedrun = Instantiate(prefabNiveauSpeedrun, Vector3.zero, Quaternion.identity);
-                niveauSpeedrun.transform.SetParent(conteneurNiveau.transform);
-                // 👆 ============================================================================== 👆
+                if (prefabsNiveauxSpeedrun[indexNiveau] != null)
+                {
+                    GameObject niveauSpeedrun = Instantiate(prefabsNiveauxSpeedrun[indexNiveau], Vector3.zero, Quaternion.identity);
+                    niveauSpeedrun.transform.SetParent(conteneurNiveau.transform);
+                }
+                else
+                {
+                    Debug.LogError("🚨 Le prefab Speedrun numéro " + (indexNiveau + 1) + " n'est pas assigné dans le LevelGenerator !");
+                }
             }
-            Debug.Log("Mode Speedrun activé : Génération aléatoire désactivée.");
             
-            // Si on est en speedrun, le générateur classique n'a pas besoin de tourner
+            Debug.Log("Mode Speedrun activé. Génération classique désactivée. Niveau chargé : " + (indexNiveau + 1));
             this.enabled = false; 
         }
         else if (modeChoisi == "Normal")
@@ -128,8 +135,6 @@ public class LevelGenerator : MonoBehaviour
              }
 
              Vector3 position = new Vector3(0, spawnY, spawnZ);
-             
-             // 👉 MAGIE : Les modules sont rangés dans le conteneur virtuel !
              GameObject nouveauModule = Instantiate(prefab, position, prefab.transform.rotation, conteneurNiveau.transform);
              nouvelleSection.Add(nouveauModule);
 
@@ -141,10 +146,7 @@ public class LevelGenerator : MonoBehaviour
          }
 
          Vector3 positionPorte = new Vector3(0, spawnY, spawnZ) + offsetPorte;
-         
-         // 👉 MAGIE : La porte aussi !
          GameObject objetPorte = Instantiate(portePrefab, positionPorte, portePrefab.transform.rotation, conteneurNiveau.transform);
-
          GateController controleurPorte = objetPorte.GetComponent<GateController>();
          prochainesPortes.Enqueue(controleurPorte); 
 
@@ -156,16 +158,9 @@ public class LevelGenerator : MonoBehaviour
          sectionsEnJeu.Enqueue(nouvelleSection);
     }
 
-    // --- NOUVELLE FONCTION POUR LE 1v1 ---
     public void StopperEtNettoyerClassique()
     {
-        // 1. On éteint UNIQUEMENT ce composant LevelGenerator (Le GameManager reste allumé !)
         this.enabled = false;
-
-        // 2. On cache le dossier virtuel et tout ce qu'il contient
-        if (conteneurNiveau != null)
-        {
-            conteneurNiveau.SetActive(false);
-        }
+        if (conteneurNiveau != null) conteneurNiveau.SetActive(false);
     }
 }

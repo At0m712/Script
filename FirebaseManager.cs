@@ -15,12 +15,17 @@ public class FirebaseManager : MonoBehaviour
     public LigneLeaderboard maLigneFixeBas; 
     public GameObject panelSaisiePseudo;
 
+    // 🚀 NOUVEAU : Le dossier qui contient nos 4 petits boutons
+    [Header("Interface Niveaux Speedrun")]
+    public GameObject conteneurBoutonsNiveaux; 
+
     private FirebaseFirestore db;
     private string userId;
-    private int indexOngletSpeedrun = 0;
     
     private bool estEnModeSpeedrun = false;
-    private bool estConnecte = false; // Sécurité pour empêcher l'envoi de données sans connexion
+    private bool estConnecte = false; 
+
+    private int indexOngletSpeedrun = 0;
 
     void Awake()
     {
@@ -33,11 +38,14 @@ public class FirebaseManager : MonoBehaviour
         {
             panelSaisiePseudo.SetActive(!PlayerPrefs.HasKey("MonPseudoFirebase"));
         }
+
+        // 🚀 NOUVEAU : Au démarrage, on est sur l'onglet Classique, donc on cache les boutons Speedrun
+        if (conteneurBoutonsNiveaux != null)
+        {
+            conteneurBoutonsNiveaux.SetActive(false);
+        }
     }
 
-    // ==========================================
-    // 🔗 NOUVEAU : Fonction appelée par le ProfileManager quand le joueur est connecté
-    // ==========================================
     public void ActiverManagerApresConnexion(string uid)
     {
         userId = uid;
@@ -49,10 +57,24 @@ public class FirebaseManager : MonoBehaviour
         RecupererClassement();
     }
 
+    // 🚀 NOUVEAU : C'est ici que la magie s'opère quand on clique sur les gros onglets
     public void ChangerOnglet(bool versSpeedrun)
     {
         estEnModeSpeedrun = versSpeedrun;
+
+        // On affiche les 4 boutons SI on va vers Speedrun, sinon on les cache
+        if (conteneurBoutonsNiveaux != null)
+        {
+            conteneurBoutonsNiveaux.SetActive(versSpeedrun);
+        }
+
         RecupererClassement();
+    }
+
+    public void ChangerNiveauSpeedrunLeaderboard(int index)
+    {
+        indexOngletSpeedrun = index;
+        if (estEnModeSpeedrun) RecupererClassement(); 
     }
 
     public void DefinirPseudo(string pseudoJoueur)
@@ -70,16 +92,13 @@ public class FirebaseManager : MonoBehaviour
             else docClassique.SetAsync(userData);
         });
 
-        DocumentReference docSpeedrun = db.Collection("ClassementSpeedrun").Document(userId);
-        docSpeedrun.GetSnapshotAsync().ContinueWithOnMainThread(task => {
-            if (task.Result.Exists) docSpeedrun.UpdateAsync(userData);
-            else docSpeedrun.SetAsync(userData);
-        });
-    }
-    public void ChangerNiveauSpeedrunLeaderboard(int index)
-    {
-        indexOngletSpeedrun = index;
-        if (estEnModeSpeedrun) RecupererClassement();
+        for (int i = 0; i < 4; i++)
+        {
+            DocumentReference docSpeedrun = db.Collection("ClassementSpeedrun_" + i).Document(userId);
+            docSpeedrun.GetSnapshotAsync().ContinueWithOnMainThread(task => {
+                if (task.Result.Exists) docSpeedrun.UpdateAsync(userData);
+            });
+        }
     }
 
     public void EnvoyerScore(int points)
@@ -122,11 +141,11 @@ public class FirebaseManager : MonoBehaviour
         string nomJoueur = PlayerPrefs.GetString("MonPseudoFirebase", "Joueur");
         long tempsEnCentiemes = Mathf.FloorToInt(secondes * 100f);
         
-        // Nom du document dynamisé : ClassementSpeedrun_0, ClassementSpeedrun_1, etc.
         DocumentReference docRef = db.Collection("ClassementSpeedrun_" + indexNiveau).Document(userId);
 
         docRef.GetSnapshotAsync().ContinueWithOnMainThread(task => {
             if (task.IsFaulted) return;
+
             DocumentSnapshot snapshot = task.Result;
             Dictionary<string, object> data = new Dictionary<string, object> {
                 { "nom", nomJoueur }, { "temps", tempsEnCentiemes }
@@ -138,9 +157,15 @@ public class FirebaseManager : MonoBehaviour
                 var dict = snapshot.ToDictionary();
                 if (dict.ContainsKey("temps")) ancienTemps = Convert.ToInt64(dict["temps"]);
 
-                if (tempsEnCentiemes < ancienTemps) docRef.UpdateAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
+                if (tempsEnCentiemes < ancienTemps) 
+                {
+                    docRef.UpdateAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
+                }
             }
-            else { docRef.SetAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); }); }
+            else
+            {
+                docRef.SetAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
+            }
         });
     }
 
@@ -148,7 +173,6 @@ public class FirebaseManager : MonoBehaviour
     {
         if (!estConnecte || db == null) return;
 
-        // 🚀 NOUVEAU : Si on est en speedrun, on charge la base de données spécifique à l'onglet !
         string collectionName = estEnModeSpeedrun ? "ClassementSpeedrun_" + indexOngletSpeedrun : "ClassementClassique";
         string champTri = estEnModeSpeedrun ? "temps" : "score";
         
@@ -191,6 +215,7 @@ public class FirebaseManager : MonoBehaviour
             }
         });
     }
+
     private string FormaterScoreEnChrono(long scoreCentiemes)
     {
         float tempsTotal = scoreCentiemes / 100f;

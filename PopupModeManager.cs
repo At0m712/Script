@@ -1,7 +1,8 @@
 using UnityEngine;
 using UnityEngine.EventSystems; 
-using UnityEngine.UI; // 👉 NOUVEAU : Requis pour modifier les Images
+using UnityEngine.UI; 
 using System.Collections;
+using TMPro; // 🚀 NOUVEAU : Requis pour modifier le texte du niveau
 
 public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
 {
@@ -10,14 +11,16 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
     public CanvasGroup fondSombre; 
     
     [Header("Affichage du Mode Choisi")]
-    [Tooltip("L'image sur ton bouton principal qui va changer")]
     public Image imageAffichageMode; 
-    [Tooltip("Le visuel pour le mode Classique")]
     public Sprite iconeClassique; 
-    [Tooltip("Le visuel pour le mode Speedrun")]
     public Sprite iconeSpeedrun; 
-    [Tooltip("Le visuel pour le mode 1v1")]
     public Sprite icone1v1; 
+
+    // 🚀 NOUVEAU : Gestion des niveaux Speedrun
+    [Header("Sélection Niveau Speedrun")]
+    [Tooltip("Glissez ici le texte qui affiche le chiffre du niveau entre les deux flèches")]
+    public TMP_Text texteNiveauSpeedrun; 
+    private int indexSpeedrunChoisi = 0; // Va de 0 à 3
 
     [Header("Paramètres d'Animation")]
     public float positionOuverteY = 0f; 
@@ -32,7 +35,6 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
     void Start()
     {
         if (popupRect == null) popupRect = GetComponent<RectTransform>();
-        
         popupRect.anchoredPosition = new Vector2(popupRect.anchoredPosition.x, positionFermeeY);
         
         if (fondSombre != null)
@@ -41,6 +43,9 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
             fondSombre.blocksRaycasts = false;
         }
 
+        // On charge le dernier niveau joué
+        indexSpeedrunChoisi = PlayerPrefs.GetInt("NiveauSpeedrunActuel", 0);
+        MettreAJourTexteSpeedrun();
         ActualiserAffichage();
     }
 
@@ -72,7 +77,6 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
         {
             tempsEcoule += Time.unscaledDeltaTime; 
             float t = tempsEcoule / dureeActuelle;
-            
             float progressionY = 0f;
 
             if (cibleY == positionOuverteY) 
@@ -80,20 +84,15 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
                 float c3 = forceRebond + 1f;
                 progressionY = 1f + c3 * Mathf.Pow(t - 1f, 3f) + forceRebond * Mathf.Pow(t - 1f, 2f);
             }
-            else 
-            {
-                progressionY = t * t * t; 
-            }
+            else progressionY = t * t * t; 
 
             popupRect.anchoredPosition = new Vector2(popupRect.anchoredPosition.x, Mathf.LerpUnclamped(departY, cibleY, progressionY));
-            
             if (fondSombre != null) fondSombre.alpha = Mathf.Lerp(departAlpha, cibleAlphaFond, t);
 
             yield return null;
         }
 
         popupRect.anchoredPosition = new Vector2(popupRect.anchoredPosition.x, cibleY);
-        
         if (fondSombre != null)
         {
             fondSombre.alpha = cibleAlphaFond;
@@ -113,11 +112,13 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        if (popupRect.anchoredPosition.y < positionOuverteY - 150f || eventData.delta.y < -10f)
-            FermerPopup();
-        else
-            OuvrirPopup();
+        if (popupRect.anchoredPosition.y < positionOuverteY - 150f || eventData.delta.y < -10f) FermerPopup();
+        else OuvrirPopup();
     }
+
+    // ==========================================
+    // CHOIX DES MODES
+    // ==========================================
 
     public void ChoisirClassique()
     {
@@ -127,11 +128,11 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
         FermerPopup(); 
     }
 
-// 🚀 NOUVEAU : Vous devez mettre 0, 1, 2 ou 3 dans le paramètre du bouton dans Unity !
-    public void ChoisirSpeedrun(int indexNiveau)
+    // 🚀 NOUVEAU : Quand on clique sur le gros bouton "Speedrun"
+    public void ChoisirSpeedrun()
     {
         PlayerPrefs.SetString("ModeChoisi", "Speedrun");
-        PlayerPrefs.SetInt("NiveauSpeedrunActuel", indexNiveau); // Mémorise le niveau choisi (0 à 3)
+        PlayerPrefs.SetInt("NiveauSpeedrunActuel", indexSpeedrunChoisi);
         PlayerPrefs.Save();
         ActualiserAffichage();
         FermerPopup();
@@ -145,19 +146,45 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
         FermerPopup();
     }
 
-    // 👉 NOUVEAU : La fonction qui gère le changement d'image
+    // ==========================================
+    // GESTION DES FLÈCHES SPEEDRUN
+    // ==========================================
+
+    // 🚀 NOUVEAU : Fonction appelée par vos deux boutons flèches
+    public void ChangerNiveauSpeedrun(int direction)
+    {
+        indexSpeedrunChoisi += direction;
+        
+        // Boucle : Si on dépasse 3, on revient à 0. Si on va sous 0, on va à 3.
+        if (indexSpeedrunChoisi > 3) indexSpeedrunChoisi = 0;
+        if (indexSpeedrunChoisi < 0) indexSpeedrunChoisi = 3;
+        
+        MettreAJourTexteSpeedrun();
+
+        // Optionnel : Quand on touche aux flèches, ça sélectionne automatiquement le mode Speedrun
+        PlayerPrefs.SetString("ModeChoisi", "Speedrun");
+        PlayerPrefs.SetInt("NiveauSpeedrunActuel", indexSpeedrunChoisi);
+        PlayerPrefs.Save();
+        ActualiserAffichage();
+    }
+
+    private void MettreAJourTexteSpeedrun()
+    {
+        if (texteNiveauSpeedrun != null)
+        {
+            // Le code utilise 0, 1, 2, 3, mais le joueur voit 1, 2, 3, 4
+            texteNiveauSpeedrun.text = (indexSpeedrunChoisi + 1).ToString(); 
+        }
+    }
+
     private void ActualiserAffichage()
     {
         if (imageAffichageMode != null)
         {
             string mode = PlayerPrefs.GetString("ModeChoisi", "Normal");
-            
-            if (mode == "Normal") 
-                imageAffichageMode.sprite = iconeClassique;
-            else if (mode == "Speedrun") 
-                imageAffichageMode.sprite = iconeSpeedrun;
-            else if (mode == "1v1") 
-                imageAffichageMode.sprite = icone1v1;
+            if (mode == "Normal") imageAffichageMode.sprite = iconeClassique;
+            else if (mode == "Speedrun") imageAffichageMode.sprite = iconeSpeedrun;
+            else if (mode == "1v1") imageAffichageMode.sprite = icone1v1;
         }
     }
 }
