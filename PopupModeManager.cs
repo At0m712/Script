@@ -127,9 +127,11 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
         FermerPopup(); 
     }
 
-    public void ChoisirSpeedrun()
+// 🚀 NOUVEAU : Vous devez mettre 0, 1, 2 ou 3 dans le paramètre du bouton dans Unity !
+    public void ChoisirSpeedrun(int indexNiveau)
     {
         PlayerPrefs.SetString("ModeChoisi", "Speedrun");
+        PlayerPrefs.SetInt("NiveauSpeedrunActuel", indexNiveau); // Mémorise le niveau choisi (0 à 3)
         PlayerPrefs.Save();
         ActualiserAffichage();
         FermerPopup();

@@ -260,12 +260,13 @@ public void MettreAJourNiveau()
 
         if (modeChoisi == "Speedrun")
         {
-            // --- AFFICHAGE MODE SPEEDRUN ---
             float tempsActuel = 0f;
             if (ChronoManager.instance != null) tempsActuel = ChronoManager.instance.ObtenirTemps();
 
             float record = 0f;
-            if (SaveManager.instance != null) record = SaveManager.instance.data.meilleurTempsSpeedrun;
+            // 🚀 NOUVEAU : On cible le bon niveau
+            int indexNiveau = PlayerPrefs.GetInt("NiveauSpeedrunActuel", 0);
+            if (SaveManager.instance != null) record = SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau];
 
             if (texteScoreDefaite != null) texteScoreDefaite.SetText("Temps : " + FormaterChrono(tempsActuel));
             if (texteMeilleurScoreDefaite != null) texteMeilleurScoreDefaite.SetText("Record : " + FormaterChrono(record));

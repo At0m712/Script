@@ -17,6 +17,7 @@ public class FirebaseManager : MonoBehaviour
 
     private FirebaseFirestore db;
     private string userId;
+    private int indexOngletSpeedrun = 0;
     
     private bool estEnModeSpeedrun = false;
     private bool estConnecte = false; // Sécurité pour empêcher l'envoi de données sans connexion
@@ -75,6 +76,11 @@ public class FirebaseManager : MonoBehaviour
             else docSpeedrun.SetAsync(userData);
         });
     }
+    public void ChangerNiveauSpeedrunLeaderboard(int index)
+    {
+        indexOngletSpeedrun = index;
+        if (estEnModeSpeedrun) RecupererClassement();
+    }
 
     public void EnvoyerScore(int points)
     {
@@ -109,17 +115,18 @@ public class FirebaseManager : MonoBehaviour
         });
     }
 
-    public void EnvoyerTempsSpeedrun(float secondes)
+    public void EnvoyerTempsSpeedrun(float secondes, int indexNiveau)
     {
         if (!estConnecte || string.IsNullOrEmpty(userId)) return;
         
         string nomJoueur = PlayerPrefs.GetString("MonPseudoFirebase", "Joueur");
         long tempsEnCentiemes = Mathf.FloorToInt(secondes * 100f);
-        DocumentReference docRef = db.Collection("ClassementSpeedrun").Document(userId);
+        
+        // Nom du document dynamisé : ClassementSpeedrun_0, ClassementSpeedrun_1, etc.
+        DocumentReference docRef = db.Collection("ClassementSpeedrun_" + indexNiveau).Document(userId);
 
         docRef.GetSnapshotAsync().ContinueWithOnMainThread(task => {
             if (task.IsFaulted) return;
-
             DocumentSnapshot snapshot = task.Result;
             Dictionary<string, object> data = new Dictionary<string, object> {
                 { "nom", nomJoueur }, { "temps", tempsEnCentiemes }
@@ -131,15 +138,9 @@ public class FirebaseManager : MonoBehaviour
                 var dict = snapshot.ToDictionary();
                 if (dict.ContainsKey("temps")) ancienTemps = Convert.ToInt64(dict["temps"]);
 
-                if (tempsEnCentiemes < ancienTemps) 
-                {
-                    docRef.UpdateAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
-                }
+                if (tempsEnCentiemes < ancienTemps) docRef.UpdateAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
             }
-            else
-            {
-                docRef.SetAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); });
-            }
+            else { docRef.SetAsync(data).ContinueWithOnMainThread(t => { RecupererClassement(); }); }
         });
     }
 
@@ -147,7 +148,8 @@ public class FirebaseManager : MonoBehaviour
     {
         if (!estConnecte || db == null) return;
 
-        string collectionName = estEnModeSpeedrun ? "ClassementSpeedrun" : "ClassementClassique";
+        // 🚀 NOUVEAU : Si on est en speedrun, on charge la base de données spécifique à l'onglet !
+        string collectionName = estEnModeSpeedrun ? "ClassementSpeedrun_" + indexOngletSpeedrun : "ClassementClassique";
         string champTri = estEnModeSpeedrun ? "temps" : "score";
         
         Query query = db.Collection(collectionName);
@@ -189,7 +191,6 @@ public class FirebaseManager : MonoBehaviour
             }
         });
     }
-
     private string FormaterScoreEnChrono(long scoreCentiemes)
     {
         float tempsTotal = scoreCentiemes / 100f;

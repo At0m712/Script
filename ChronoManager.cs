@@ -154,46 +154,40 @@ public class ChronoManager : MonoBehaviour
         MettreAJourAffichage(); 
         
         Debug.Log("Ligne d'arrivée franchie ! Temps final : " + tempsEcoule);
-
         Time.timeScale = 0f;
+
+        // 🚀 NOUVEAU : On récupère l'index du niveau actuellement joué (0, 1, 2 ou 3)
+        int indexNiveau = PlayerPrefs.GetInt("NiveauSpeedrunActuel", 0);
 
         if (SaveManager.instance != null)
         {
-            float record = SaveManager.instance.data.meilleurTempsSpeedrun;
+            float record = SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau];
             
-            // 🛡️ LA SÉCURITÉ : On ne valide QUE si c'est un vrai record
             if (record == 0f || tempsEcoule < record)
             {
-                // 1. On sauvegarde en local (l'espion ProfileManager va le détecter et l'envoyer dans ton profil)
-                SaveManager.instance.data.meilleurTempsSpeedrun = tempsEcoule;
+                SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau] = tempsEcoule;
                 SaveManager.instance.SauvegarderPartie();
 
-                Debug.Log("🏆 Nouveau Record Speedrun validé !");
+                Debug.Log("🏆 Nouveau Record Speedrun validé pour le niveau " + (indexNiveau + 1) + " !");
 
-                // 2. On met à jour le classement PUBLIC global
                 if (FirebaseManager.instance != null) 
                 {
-                    FirebaseManager.instance.EnvoyerTempsSpeedrun(tempsEcoule); 
+                    // 🚀 NOUVEAU : On envoie l'index avec le temps
+                    FirebaseManager.instance.EnvoyerTempsSpeedrun(tempsEcoule, indexNiveau); 
                 }
             }
         }
 
         // Mise à jour de l'UI
-        if (texteTempsFinal != null)
-        {
-            texteTempsFinal.SetText("Temps : " + FormaterChrono(tempsEcoule));
-        }
+        if (texteTempsFinal != null) texteTempsFinal.SetText("Temps : " + FormaterChrono(tempsEcoule));
         
         if (texteMeilleurTemps != null)
         {
-            float meilleurTempsLocal = SaveManager.instance != null ? SaveManager.instance.data.meilleurTempsSpeedrun : 0f;
+            float meilleurTempsLocal = SaveManager.instance != null ? SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau] : 0f;
             texteMeilleurTemps.SetText("Meilleur : " + FormaterChrono(meilleurTempsLocal));
         }
 
-        if (panelVictoire != null)
-        {
-            panelVictoire.SetActive(true);
-        }
+        if (panelVictoire != null) panelVictoire.SetActive(true);
     }
 
     public float ObtenirTemps()
