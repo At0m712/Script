@@ -27,8 +27,11 @@ public class ProfileManager : MonoBehaviour
         FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task => {
             if (task.Result == DependencyStatus.Available) 
             {
-                FirebaseDatabase.DefaultInstance.SetPersistenceEnabled(true);
-                dbReference = FirebaseDatabase.GetInstance("https://leaderboardgame-5218c-default-rtdb.europe-west1.firebasedatabase.app/").RootReference;
+                // On cible spécifiquement votre base de données européenne
+                FirebaseDatabase instanceDB = FirebaseDatabase.GetInstance("https://leaderboardgame-5218c-default-rtdb.europe-west1.firebasedatabase.app/");
+                instanceDB.SetPersistenceEnabled(true);
+                dbReference = instanceDB.RootReference;
+                
                 auth = FirebaseAuth.DefaultInstance;
 
                 if (GooglePlayManager.instance != null) GooglePlayManager.instance.LancerConnexionGoogleEtFirebase(auth);
@@ -36,7 +39,7 @@ public class ProfileManager : MonoBehaviour
             } 
             else 
             {
-                Debug.LogError("🚨 Erreur Firebase : " + task.Result);
+                Debug.LogError("🚨 Erreur Dépendances Firebase : " + task.Result);
             }
         });
     }
@@ -49,8 +52,18 @@ public class ProfileManager : MonoBehaviour
             return;
         }
 
+        Debug.Log("⏳ [ProfileManager] Tentative de connexion Firebase Anonyme de secours...");
+        
         auth.SignInAnonymouslyAsync().ContinueWithOnMainThread(task => {
-            if (!task.IsCanceled && !task.IsFaulted) DemarrerSynchronisation(task.Result.User.UserId);
+            if (task.IsCanceled || task.IsFaulted)
+            {
+                // LA FAMEUSE ERREUR SILENCIEUSE EST MAINTENANT VISIBLE !
+                Debug.LogError("🚨 [CRITIQUE] Firebase a refusé la connexion Anonyme ! Avez-vous activé le fournisseur 'Anonyme' dans Firebase > Authentication > Sign-in method ? L'erreur exacte est : " + task.Exception);
+                return;
+            }
+            
+            Debug.Log("✅ [ProfileManager] Connecté Anonymement avec succès ! UID : " + task.Result.User.UserId);
+            DemarrerSynchronisation(task.Result.User.UserId);
         });
     }
 
@@ -59,7 +72,6 @@ public class ProfileManager : MonoBehaviour
         uidJoueur = uid;
         Debug.Log("📍 [ProfileManager] Lancement de l'écoute Serveur pour l'UID : " + uidJoueur);
 
-        // 🔗 NOUVEAU : On donne le signal au FirebaseManager (Leaderboards) qu'il peut s'activer !
         if (FirebaseManager.instance != null)
         {
             FirebaseManager.instance.ActiverManagerApresConnexion(uidJoueur);
@@ -73,8 +85,16 @@ public class ProfileManager : MonoBehaviour
     {
         if (bloqueEcouteTemporairement) return; 
 
-        if (args.Snapshot.Exists)
+        // SÉCURITÉ : Vérifie si Firebase bloque l'accès à cause des Règles (Rules)
+        if (args.DatabaseError != null)
         {
+            Debug.LogError("🚨 [CRITIQUE DB] Firebase refuse de lire le dossier. Vos règles de base de données (Rules) bloquent l'accès ! Erreur : " + args.DatabaseError.Message);
+            return;
+        }
+
+        if (args.Snapshot != null && args.Snapshot.Exists)
+        {
+            Debug.Log("☁️ [ProfileManager] Dossier serveur trouvé ! Synchronisation vers le téléphone...");
             string jsonCloud = args.Snapshot.GetRawJsonValue();
             
             if (!string.IsNullOrEmpty(jsonCloud) && SaveManager.instance != null)
@@ -85,7 +105,7 @@ public class ProfileManager : MonoBehaviour
         }
         else
         {
-            // CRÉATION DU DOSSIER : Si le joueur n'a pas de dossier, on le crée en envoyant la save locale
+            Debug.Log("⚠️ [ProfileManager] Aucun dossier Firebase n'existe pour ce joueur. Création en cours...");
             if (SaveManager.instance != null)
             {
                 string jsonLocal = JsonUtility.ToJson(SaveManager.instance.data);
@@ -103,8 +123,15 @@ public class ProfileManager : MonoBehaviour
         dbReference.Child("Joueurs").Child(uidJoueur).Child("dataComplete").SetRawJsonValueAsync(jsonPartie).ContinueWithOnMainThread(task => 
         {
             bloqueEcouteTemporairement = false; 
-            if (task.IsFaulted) Debug.LogError("🚨 Erreur d'écriture Serveur : " + task.Exception);
-            else Debug.Log("✅ [ProfileManager] Sauvegarde poussée sur le Cloud et Dossier créé !");
+            
+            if (task.IsFaulted) 
+            {
+                Debug.LogError("🚨 [CRITIQUE DB] Échec de la création du dossier sur Firebase ! Vérifiez vos Règles. Erreur : " + task.Exception);
+            }
+            else 
+            {
+                Debug.Log("✅ [ProfileManager] Dossier créé et sauvegarde poussée sur le Cloud avec succès !");
+            }
         });
         
         string pseudoActuel = PlayerPrefs.GetString("MonPseudoFirebase", "joueur");
