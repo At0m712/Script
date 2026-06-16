@@ -3,6 +3,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI; 
 using System.Collections;
 using TMPro; // 🚀 NOUVEAU : Requis pour modifier le texte du niveau
+using UnityEngine.Localization.Settings;
 
 public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
 {
@@ -168,14 +169,23 @@ public class PopupModeManager : MonoBehaviour, IDragHandler, IEndDragHandler
         ActualiserAffichage();
     }
 
-    private void MettreAJourTexteSpeedrun()
+    private string T(string cle)
     {
-        if (texteNiveauSpeedrun != null)
-        {
-            // Le code utilise 0, 1, 2, 3, mais le joueur voit 1, 2, 3, 4
-            texteNiveauSpeedrun.text = (indexSpeedrunChoisi + 1).ToString(); 
-        }
+        return LocalizationSettings.StringDatabase.GetLocalizedString("TexteUI", cle);
     }
+
+    // Remplace ta fonction existante par celle-ci
+    private void MettreAJourTexteSpeedrun()
+{
+    if (texteNiveauSpeedrun != null)
+    {
+        // 1. On récupère la chaîne avec le placeholder (ex: "Niv {0}")
+        string formatDeTraduction = T("UI_NIVEAU_FORMAT");
+        
+        // 2. On insère le numéro (index + 1) à la place du {0}
+        texteNiveauSpeedrun.text = string.Format(formatDeTraduction, indexSpeedrunChoisi + 1);
+    }
+}
 
     private void ActualiserAffichage()
     {
