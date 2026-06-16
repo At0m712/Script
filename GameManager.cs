@@ -15,6 +15,8 @@ public class GameManager : MonoBehaviour
     public static SafeInt argentTotal = 0; 
     private SafeInt scoreActuel = 0;       
     private SafeInt meilleurScore = 0;  
+    // Compteur pour la pub interstitielle du menu
+    private static int compteurPubRetourMenu = 0;
 
     [Header("Interface Globale")]
     public GameObject panelDefaite; 
@@ -320,10 +322,27 @@ public void MettreAJourNiveau()
         SaveManager.instance.data.scoreSession = 0; 
         SaveManager.instance.SauvegarderPartie();   
 
-        
-        
         ThemeManager.jeuEstLance = false; 
         Time.timeScale = 1f; 
+
+        // ==========================================
+        // 📺 GESTION DE LA PUBLICITÉ INTERSTITIELLE
+        // ==========================================
+        compteurPubRetourMenu++; // On incrémente le compteur
+
+        if (compteurPubRetourMenu >= 3)
+        {
+            compteurPubRetourMenu = 0; // Remise à zéro
+            
+            // On vérifie que le script AdMob est là et que la pub a fini de charger
+            if (AdMobManager.instance != null && AdMobManager.instance.IsInterstitialReady())
+            {
+                Debug.Log("📺 Affichage de la pub interstitielle (3ème retour au menu) !");
+                AdMobManager.instance.ShowInterstitialAd();
+            }
+        }
+
+        // On recharge la scène à la toute fin (la pub s'affichera en superposition sans problème)
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 
