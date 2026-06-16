@@ -27,7 +27,6 @@ public class ProfileManager : MonoBehaviour
         FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task => {
             if (task.Result == DependencyStatus.Available) 
             {
-                // On cible spécifiquement votre base de données européenne
                 FirebaseDatabase instanceDB = FirebaseDatabase.GetInstance("https://leaderboardgame-5218c-default-rtdb.europe-west1.firebasedatabase.app/");
                 instanceDB.SetPersistenceEnabled(true);
                 dbReference = instanceDB.RootReference;
@@ -57,7 +56,6 @@ public class ProfileManager : MonoBehaviour
         auth.SignInAnonymouslyAsync().ContinueWithOnMainThread(task => {
             if (task.IsCanceled || task.IsFaulted)
             {
-                // LA FAMEUSE ERREUR SILENCIEUSE EST MAINTENANT VISIBLE !
                 Debug.LogError("🚨 [CRITIQUE] Firebase a refusé la connexion Anonyme ! Avez-vous activé le fournisseur 'Anonyme' dans Firebase > Authentication > Sign-in method ? L'erreur exacte est : " + task.Exception);
                 return;
             }
@@ -85,7 +83,6 @@ public class ProfileManager : MonoBehaviour
     {
         if (bloqueEcouteTemporairement) return; 
 
-        // SÉCURITÉ : Vérifie si Firebase bloque l'accès à cause des Règles (Rules)
         if (args.DatabaseError != null)
         {
             Debug.LogError("🚨 [CRITIQUE DB] Firebase refuse de lire le dossier. Vos règles de base de données (Rules) bloquent l'accès ! Erreur : " + args.DatabaseError.Message);
@@ -140,6 +137,7 @@ public class ProfileManager : MonoBehaviour
 
     private void RafraichirJeuComplet()
     {
+        // Mise à jour locale (GameManager, etc.)
         if (GameManager.instance != null) 
         {
             GameManager.argentTotal = SaveManager.instance.data.argentTotal;
@@ -155,5 +153,13 @@ public class ProfileManager : MonoBehaviour
 
         UpgradeShopUI boutiqueUpgrade = FindObjectOfType<UpgradeShopUI>();
         if (boutiqueUpgrade != null && boutiqueUpgrade.gameObject.activeInHierarchy) boutiqueUpgrade.ActualiserBoutiqueUpgrades();
+
+        // 🚀 NOUVEAU : On s'assure que le classement (Firestore) est forcé de s'aligner 
+        // avec la sauvegarde que l'on vient de télécharger depuis le Cloud (RTDB).
+        if (FirebaseManager.instance != null)
+        {
+            FirebaseManager.instance.SynchroniserFirestoreAvecDatabaseLocale();
+            FirebaseManager.instance.RecupererClassement(); // Rafraîchit l'UI si elle est ouverte
+        }
     }
 }
