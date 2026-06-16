@@ -212,8 +212,31 @@ public class FirebaseManager : MonoBehaviour
             if (maLigneFixeBas != null)
             {
                 string monNom = PlayerPrefs.GetString("MonPseudoFirebase", "Moi");
-                if (monRang != -1) maLigneFixeBas.ConfigurerLigne(monRang, monNom, monScoreTexte, true, true);
-                else maLigneFixeBas.ConfigurerLigne(0, monNom, "Non classé", true, true);
+                if (monRang != -1) 
+                {
+                    // Si on est dans le Top 50, on affiche notre rang officiel
+                    maLigneFixeBas.ConfigurerLigne(monRang, monNom, monScoreTexte, true, true);
+                }
+                else 
+                {
+                    // 🚀 NOUVEAU : Si on est pas dans le Top 50, on affiche notre VRAI score local !
+                    string monScoreLocal = "";
+                    
+                    if (estEnModeSpeedrun)
+                    {
+                        // 👉 CORRECTION : tempsLocal est un 'int' maintenant
+                        int tempsLocal = SaveManager.instance.data.meilleursTempsSpeedrun[indexOngletSpeedrun];
+                        
+                        if (tempsLocal > 0) monScoreLocal = FormaterScoreEnChrono(tempsLocal);
+                        else monScoreLocal = "--:--.--"; 
+                    }
+                    else
+                    {
+                        monScoreLocal = SaveManager.instance.data.meilleurScore + " pts";
+                    }
+                    
+                    maLigneFixeBas.ConfigurerLigne(0, monNom, monScoreLocal, true, true);
+                }
             }
         });
     }

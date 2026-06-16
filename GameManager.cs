@@ -263,13 +263,12 @@ public void MettreAJourNiveau()
             float tempsActuel = 0f;
             if (ChronoManager.instance != null) tempsActuel = ChronoManager.instance.ObtenirTemps();
 
-            float record = 0f;
-            // 🚀 NOUVEAU : On cible le bon niveau
+            int record = 0; // 👉 C'est un int maintenant
             int indexNiveau = PlayerPrefs.GetInt("NiveauSpeedrunActuel", 0);
             if (SaveManager.instance != null) record = SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau];
 
             if (texteScoreDefaite != null) texteScoreDefaite.SetText("Temps : " + FormaterChrono(tempsActuel));
-            if (texteMeilleurScoreDefaite != null) texteMeilleurScoreDefaite.SetText("Record : " + FormaterChrono(record));
+            if (texteMeilleurScoreDefaite != null) texteMeilleurScoreDefaite.SetText("Record : " + FormaterChronoEntier(record));
         }
         else
         {
@@ -428,5 +427,13 @@ public void MettreAJourNiveau()
             ChronoManager.instance.ReinitialiserChrono();
             ChronoManager.instance.DemarrerChrono();
         }
+    }
+    private string FormaterChronoEntier(int centiemesTotaux)
+    {
+        if (centiemesTotaux <= 0) return "--:--.--";
+        int minutes = (centiemesTotaux / 100) / 60;
+        int secondes = (centiemesTotaux / 100) % 60;
+        int centiemes = centiemesTotaux % 100;
+        return string.Format("{0:00}:{1:00}.{2:00}", minutes, secondes, centiemes);
     }
 }

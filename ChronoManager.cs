@@ -156,35 +156,36 @@ public class ChronoManager : MonoBehaviour
         Debug.Log("Ligne d'arrivée franchie ! Temps final : " + tempsEcoule);
         Time.timeScale = 0f;
 
-        // 🚀 NOUVEAU : On récupère l'index du niveau actuellement joué (0, 1, 2 ou 3)
         int indexNiveau = PlayerPrefs.GetInt("NiveauSpeedrunActuel", 0);
+        
+        // 👉 LA MAGIE : On transforme 41.12f en 4112 !
+        int tempsEnCentiemes = Mathf.FloorToInt(tempsEcoule * 100f);
 
         if (SaveManager.instance != null)
         {
-            float record = SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau];
+            int record = SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau];
             
-            if (record == 0f || tempsEcoule < record)
+            // Si on a fait un meilleur temps (ou que le record était à 0)
+            if (record == 0 || tempsEnCentiemes < record)
             {
-                SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau] = tempsEcoule;
+                SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau] = tempsEnCentiemes;
                 SaveManager.instance.SauvegarderPartie();
 
                 Debug.Log("🏆 Nouveau Record Speedrun validé pour le niveau " + (indexNiveau + 1) + " !");
 
                 if (FirebaseManager.instance != null) 
                 {
-                    // 🚀 NOUVEAU : On envoie l'index avec le temps
                     FirebaseManager.instance.EnvoyerTempsSpeedrun(tempsEcoule, indexNiveau); 
                 }
             }
         }
 
-        // Mise à jour de l'UI
         if (texteTempsFinal != null) texteTempsFinal.SetText("Temps : " + FormaterChrono(tempsEcoule));
         
         if (texteMeilleurTemps != null)
         {
-            float meilleurTempsLocal = SaveManager.instance != null ? SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau] : 0f;
-            texteMeilleurTemps.SetText("Meilleur : " + FormaterChrono(meilleurTempsLocal));
+            int meilleurTempsLocal = SaveManager.instance != null ? SaveManager.instance.data.meilleursTempsSpeedrun[indexNiveau] : 0;
+            texteMeilleurTemps.SetText("Meilleur : " + FormaterChronoEntier(meilleurTempsLocal));
         }
 
         if (panelVictoire != null) panelVictoire.SetActive(true);
@@ -212,5 +213,13 @@ public class ChronoManager : MonoBehaviour
                 if (element != null) element.SetActive(true);
             }
         }
+    }
+    private string FormaterChronoEntier(int centiemesTotaux)
+    {
+        if (centiemesTotaux <= 0) return "--:--.--";
+        int minutes = (centiemesTotaux / 100) / 60;
+        int secondes = (centiemesTotaux / 100) % 60;
+        int centiemes = centiemesTotaux % 100;
+        return string.Format("{0:00}:{1:00}.{2:00}", minutes, secondes, centiemes);
     }
 }

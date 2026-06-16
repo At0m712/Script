@@ -30,7 +30,8 @@ public class PlayerData
     public float volumeEffets = 1f;
 
     // 🚀 NOUVEAU : Une liste de 4 temps pour nos 4 niveaux de Speedrun (Initialisés à 0)
-    public List<float> meilleursTempsSpeedrun = new List<float>() { 0f, 0f, 0f, 0f };
+    // 🚀 La liste sauvegarde désormais des entiers !
+    public List<int> meilleursTempsSpeedrun = new List<int>() { 0, 0, 0, 0 };
 
     public int niveauAimant = 1;
     public int niveauX2 = 1;
@@ -86,10 +87,11 @@ public class SaveManager : MonoBehaviour
         {
             data = JsonUtility.FromJson<PlayerData>(jsonCloud);
             
-            // Sécurité : Si le cloud envoie un vieux profil sans la liste de 4 niveaux, on la crée
+            
+            // Sécurité : on initialise avec des 'int'
             if (data.meilleursTempsSpeedrun == null || data.meilleursTempsSpeedrun.Count < 4)
             {
-                data.meilleursTempsSpeedrun = new List<float>() { 0f, 0f, 0f, 0f };
+                data.meilleursTempsSpeedrun = new List<int>() { 0, 0, 0, 0 };
             }
 
             File.WriteAllBytes(saveFilePath, Crypter(jsonCloud));
@@ -107,8 +109,11 @@ public class SaveManager : MonoBehaviour
                 byte[] fichierComplet = File.ReadAllBytes(saveFilePath);
                 data = JsonUtility.FromJson<PlayerData>(Decrypter(fichierComplet));
                 // Sécurité pour les anciens joueurs qui font la mise à jour
-                if (data.meilleursTempsSpeedrun == null || data.meilleursTempsSpeedrun.Count < 4)
-                    data.meilleursTempsSpeedrun = new List<float>() { 0f, 0f, 0f, 0f };
+                // Sécurité : on initialise avec des 'int'
+            if (data.meilleursTempsSpeedrun == null || data.meilleursTempsSpeedrun.Count < 4)
+            {
+                data.meilleursTempsSpeedrun = new List<int>() { 0, 0, 0, 0 };
+            }
             }
             catch { data = new PlayerData(); SauvegarderPartie(); }
         }
