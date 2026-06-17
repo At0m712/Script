@@ -29,8 +29,6 @@ public class PlayerData
     public float volumeMusique = 0.5f;
     public float volumeEffets = 1f;
 
-    // 🚀 NOUVEAU : Une liste de 4 temps pour nos 4 niveaux de Speedrun (Initialisés à 0)
-    // 🚀 La liste sauvegarde désormais des entiers !
     public List<int> meilleursTempsSpeedrun = new List<int>() { 0, 0, 0, 0 };
 
     public int niveauAimant = 1;
@@ -39,6 +37,10 @@ public class PlayerData
 
     public string datePubPieces = ""; 
     public int pubsPiecesVuesAujourdhui = 0;
+
+    // NOUVEAU : Variables pour le multiplicateur de pub
+    public string dateFinMultiplicateur = ""; 
+    public int multiplicateurArgentActuel = 1; 
 }
 
 public class SaveManager : MonoBehaviour

@@ -3,7 +3,7 @@ using GoogleMobileAds.Api;
 using System;
 using TMPro;
 
-public enum TypeRecompense { Rien, Resurrection, Argent }
+public enum TypeRecompense { Rien, Resurrection, Argent, MultiplicateurArgent }
 
 public class AdMobManager : MonoBehaviour
 {
@@ -236,6 +236,11 @@ public class AdMobManager : MonoBehaviour
                 {
                     GameManager.instance.ExecuterResurrection(); 
                 }
+                else if (recompenseEnAttente == TypeRecompense.MultiplicateurArgent)
+                {
+                    // NOUVEAU : Activation du bonus après la vidéo
+                    GameManager.instance.ActiverBonusMultiplicateurPub();
+                }
             }
             
             recompenseEnAttente = TypeRecompense.Rien;
@@ -260,5 +265,11 @@ public class AdMobManager : MonoBehaviour
         };
         
         ad.OnAdFullScreenContentFailed += (AdError error) => { fonctionDeRechargement?.Invoke(); };
+    }
+    // Fonction à attribuer à ton nouveau bouton dans l'inspecteur
+    public void ShowAdPourMultiplicateur()
+    {
+        recompenseEnAttente = TypeRecompense.MultiplicateurArgent;
+        LancerLaVideo(rewardedAdPieces);
     }
 }

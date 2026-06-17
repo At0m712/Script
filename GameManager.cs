@@ -145,8 +145,33 @@ public class GameManager : MonoBehaviour
     // --- CORRECTION ARCHITECTURE : Seul le GameManager gère l'argent ---
     public void AjouterArgent(int montant)
     {
-        // NOUVEAU : Si le X2 est actif, on double l'argent !
-        if (PowerUpManager.instance != null && PowerUpManager.instance.x2Actif) montant *= 2;
+        // 1. Calcul du multiplicateur de pub
+        int multiplicateur = 1;
+        if (SaveManager.instance != null && !string.IsNullOrEmpty(SaveManager.instance.data.dateFinMultiplicateur))
+        {
+            System.DateTime finBonus;
+            System.DateTime maintenant = System.DateTime.Now;
+            
+            // On utilise l'heure d'internet (si dispo) pour éviter la triche via l'horloge du téléphone
+            if (QuestManager.instance != null) maintenant += QuestManager.instance.differenceHeureInternet;
+
+            if (System.DateTime.TryParse(SaveManager.instance.data.dateFinMultiplicateur, out finBonus))
+            {
+                if (maintenant < finBonus)
+                {
+                    // Le bonus est encore actif
+                    multiplicateur = SaveManager.instance.data.multiplicateurArgentActuel;
+                }
+                else
+                {
+                    // Le temps est écoulé
+                    SaveManager.instance.data.multiplicateurArgentActuel = 1; 
+                }
+            }
+        }
+
+        // 2. Application du multiplicateur
+        montant *= multiplicateur;
 
         argentTotal += montant;
         SaveManager.instance.data.argentTotal = argentTotal;
@@ -186,9 +211,7 @@ public void MettreAJourNiveau()
 
     public void AjouterScore(int points)
     {
-        // NOUVEAU : Si le X2 est actif, on double les points !
-        if (PowerUpManager.instance != null && PowerUpManager.instance.x2Actif) points *= 2;
-
+        // Le Power-up X2 a été retiré d'ici, il est géré à la source (Enemy.cs)
         scoreActuel += points;
         SaveManager.instance.data.scoreSession = scoreActuel;
 
@@ -199,6 +222,53 @@ public void MettreAJourNiveau()
         }
         
         MettreAJourUI(); 
+    }
+
+    // NOUVEAU : Fonction appelée après avoir regardé une pub
+    public void ActiverBonusMultiplicateurPub()
+    {
+        if (SaveManager.instance == null) return;
+
+        System.DateTime maintenant = System.DateTime.Now;
+        if (QuestManager.instance != null) maintenant += QuestManager.instance.differenceHeureInternet;
+
+        System.DateTime finBonus;
+        
+        // On vérifie si un bonus tourne déjà
+        if (!string.IsNullOrEmpty(SaveManager.instance.data.dateFinMultiplicateur) && System.DateTime.TryParse(SaveManager.instance.data.dateFinMultiplicateur, out finBonus))
+        {
+            if (finBonus < maintenant)
+            {
+                // S'il est expiré, on repart de "maintenant"
+                finBonus = maintenant;
+                SaveManager.instance.data.multiplicateurArgentActuel = 1;
+            }
+        }
+        else
+        {
+            // Aucun bonus actif
+            finBonus = maintenant;
+            SaveManager.instance.data.multiplicateurArgentActuel = 1;
+        }
+
+        // On augmente le multiplicateur (X2 -> X3 -> X4 Max)
+        if (SaveManager.instance.data.multiplicateurArgentActuel < 4)
+        {
+            SaveManager.instance.data.multiplicateurArgentActuel++;
+        }
+
+        // On ajoute 10 minutes
+        finBonus = finBonus.AddMinutes(10);
+
+        // On bloque le chronomètre à 1 heure (60 minutes) maximum à partir de "maintenant"
+        if (finBonus > maintenant.AddHours(1))
+        {
+            finBonus = maintenant.AddHours(1);
+        }
+
+        // On sauvegarde le format ISO 8601 ("o") pour ne pas avoir de bug de fuseau horaire
+        SaveManager.instance.data.dateFinMultiplicateur = finBonus.ToString("o"); 
+        SaveManager.instance.SauvegarderPartie();
     }
     // Fonction pour le bonus de Vie Supplémentaire (Max 5)
     public void AjouterVie()

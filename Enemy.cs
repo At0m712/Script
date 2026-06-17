@@ -47,25 +47,28 @@ public class Enemy : MonoBehaviour
 
         if (GameManager.instance != null) 
         {
-            GameManager.instance.AjouterScore(pointsDonnes);
+            // Le Power-up X2 s'applique uniquement ici, sur les points de l'ennemi tué !
+            int pointsFinaux = pointsDonnes;
+            if (PowerUpManager.instance != null && PowerUpManager.instance.x2Actif)
+            {
+                pointsFinaux *= 2;
+            }
+            
+            GameManager.instance.AjouterScore(pointsFinaux);
         }
 
         Vector3 positionExplosion = transform.position + new Vector3(0f, 1.2f, 0f);
 
-        // --- OPTIMISATION : Utilisation de l'Object Pooler ---
         if (ObjectPooler.instance != null && ObjectPooler.instance.dictionnaireReserves.ContainsKey(tagPoolExplosion))
         {
-            // On sort une explosion de la réserve (Zéro lag !)
             ObjectPooler.instance.SortirObjet(tagPoolExplosion, positionExplosion, Quaternion.identity);
         }
         else if (explosionPrefab != null)
         {
-            // Sécurité : Si tu as oublié de paramétrer l'ObjectPooler, on utilise l'ancienne méthode
             GameObject vfx = Instantiate(explosionPrefab, positionExplosion, Quaternion.identity);
             Destroy(vfx, 2f);
         }
 
-        // Appel instantané de la caméra
         if (CameraFollow.instance != null)
         {
             CameraFollow.instance.Secouer(1f, 0.25f);  
@@ -76,8 +79,6 @@ public class Enemy : MonoBehaviour
             AudioManager.instance.JouerSon(sonExplosion, volumeSon);
         }
 
-        // (On détruit l'ennemi pour l'instant car ton SpawnManager utilise des Instantiate pour les créer. 
-        // L'idéal plus tard sera de modifier le SpawnManager pour utiliser le Pooler aussi !)
         Destroy(gameObject);
     }
 }
