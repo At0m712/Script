@@ -400,14 +400,19 @@ public void MettreAJourNiveau()
         // ==========================================
         compteurPubRetourMenu++; // On incrémente le compteur
 
-        if (compteurPubRetourMenu >= 3)
+        // 👉 NOUVEAU : On récupère le mode actuel et on définit la limite appropriée
+        string modeChoisi = PlayerPrefs.GetString("ModeChoisi", "Normal");
+        int limitePub = (modeChoisi == "Speedrun") ? 10 : 3;
+
+        // On vérifie si on a atteint ou dépassé la limite du mode en cours
+        if (compteurPubRetourMenu >= limitePub)
         {
             compteurPubRetourMenu = 0; // Remise à zéro
             
             // On vérifie que le script AdMob est là et que la pub a fini de charger
             if (AdMobManager.instance != null && AdMobManager.instance.IsInterstitialReady())
             {
-                Debug.Log("📺 Affichage de la pub interstitielle (3ème retour au menu) !");
+                Debug.Log("📺 Affichage de la pub interstitielle (" + limitePub + "ème retour au menu en mode " + modeChoisi + ") !");
                 AdMobManager.instance.ShowInterstitialAd();
             }
         }
