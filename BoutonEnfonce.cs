@@ -6,8 +6,10 @@ public class BoutonEnfonce : MonoBehaviour, IPointerDownHandler, IPointerUpHandl
 {
     private RectTransform rectTransform;
     
-    // Déplacement de 31px à droite (X) et 31px en bas (Y en négatif)
-    private Vector2 decalageCible = new Vector2(20f, -20f); 
+    [Header("Paramètres d'animation")]
+    [Tooltip("Décalage en pixels (X, Y) appliqué quand le bouton est pressé")]
+    public Vector2 decalageCible = new Vector2(20f, -20f); 
+    
     private bool estEnfonce = false;
 
     void Awake()
