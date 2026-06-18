@@ -22,7 +22,6 @@ public class FirebaseManager : MonoBehaviour
     private bool estEnModeSpeedrun = false;
     private int indexOngletSpeedrun = 0;
 
-    // 🚀 OPTIMISATION : Système anti-lag et anti-doublons
     private List<GameObject> poolDeLignes = new List<GameObject>();
     private int idRequeteActuelle = 0;
 
@@ -40,10 +39,8 @@ public class FirebaseManager : MonoBehaviour
 
         if (conteneurBoutonsNiveaux != null) conteneurBoutonsNiveaux.SetActive(false);
 
-        // 🧹 NETTOYAGE DE SÉCURITÉ : On supprime les faux éléments laissés dans l'éditeur
         foreach (Transform enfant in conteneurClassement)
         {
-            // On ne détruit surtout pas ta ligne fixe si jamais elle est dans le même dossier
             if (maLigneFixeBas == null || enfant != maLigneFixeBas.transform)
             {
                 Destroy(enfant.gameObject);
@@ -68,8 +65,38 @@ public class FirebaseManager : MonoBehaviour
     public void ActiverManagerApresConnexion(string uidIgnore)
     {
         FirebaseAnalytics.SetAnalyticsCollectionEnabled(true);
-        SynchroniserFirestoreAvecDatabaseLocale();
-        RecupererClassement();
+        
+        // 🚀 On télécharge le meilleur score de la database
+        RestaurerDonneesDepuisCloud();
+
+        // 🚀 NOUVEAU : On rattrape les anciens joueurs silencieusement
+        RattraperAncienJoueur();
+    }
+    // =======================================================
+    // 🚀 SYSTÈME DE COMPTEUR GLOBAL
+    // =======================================================
+
+    private void RattraperAncienJoueur()
+    {
+        // Si le joueur a DÉJÀ un pseudo (ancien joueur) MAIS qu'il n'a jamais été compté
+        if (PlayerPrefs.HasKey("MonPseudoFirebase") && PlayerPrefs.GetInt("CompteurJoueurInscrit", 0) == 0)
+        {
+            DocumentReference statsRef = FirebaseFirestore.DefaultInstance.Collection("Statistiques").Document("Global");
+            
+            // On ajoute silencieusement +1 au compteur global
+            Dictionary<string, object> updates = new Dictionary<string, object>
+            {
+                { "TotalJoueurs", FieldValue.Increment(1) }
+            };
+            
+            statsRef.SetAsync(updates, SetOptions.MergeAll);
+
+            // On le marque comme compté définitivement sur son appareil
+            PlayerPrefs.SetInt("CompteurJoueurInscrit", 1);
+            PlayerPrefs.Save();
+            
+            Debug.Log("Ancien joueur rattrapé et ajouté aux statistiques globales !");
+        }
     }
 
     public void AfficherClassementClassique()
@@ -98,10 +125,29 @@ public class FirebaseManager : MonoBehaviour
         PlayerPrefs.SetString("MonPseudoFirebase", pseudoJoueur);
         PlayerPrefs.Save();
         SynchroniserFirestoreAvecDatabaseLocale();
-    }
 
+        // 🚀 NOUVEAU : On ajoute +1 au compteur global de la base de données
+        // On vérifie qu'on ne l'a pas déjà compté pour ne pas fausser les stats
+        if (PlayerPrefs.GetInt("CompteurJoueurInscrit", 0) == 0)
+        {
+            DocumentReference statsRef = FirebaseFirestore.DefaultInstance.Collection("Statistiques").Document("Global");
+            
+            // FieldValue.Increment(1) est une fonction magique de Firebase 
+            // qui fait "+1" de manière 100% sécurisée, même si 100 joueurs s'inscrivent à la même seconde !
+            Dictionary<string, object> updates = new Dictionary<string, object>
+            {
+                { "TotalJoueurs", FieldValue.Increment(1) }
+            };
+            
+            statsRef.SetAsync(updates, SetOptions.MergeAll);
+
+            // On mémorise sur le téléphone que ce joueur a bien été compté
+            PlayerPrefs.SetInt("CompteurJoueurInscrit", 1);
+            PlayerPrefs.Save();
+        }
+    }
     // =======================================================
-    // 🚀 SYSTÈME D'ENVOI OPTIMISÉ (Base Locale = Maître)
+    // 🚀 GESTION DES SCORES (100% SÉCURISÉ)
     // =======================================================
 
     public void EnvoyerScore(int points)
@@ -110,7 +156,7 @@ public class FirebaseManager : MonoBehaviour
         if (string.IsNullOrEmpty(uid) || SaveManager.instance == null) return;
 
         string nomJoueur = PlayerPrefs.GetString("MonPseudoFirebase", "Joueur");
-        int vraiMeilleurScore = SaveManager.instance.data.meilleurScore; // On force l'usage de la base locale
+        int vraiMeilleurScore = SaveManager.instance.data.meilleurScore; 
 
         Dictionary<string, object> data = new Dictionary<string, object> {
             { "nom", nomJoueur }, 
@@ -119,7 +165,7 @@ public class FirebaseManager : MonoBehaviour
 
         FirebaseFirestore.DefaultInstance.Collection("ClassementClassique").Document(uid)
             .SetAsync(data, SetOptions.MergeAll).ContinueWithOnMainThread(t => { 
-                RecupererClassement(); 
+                if (!estEnModeSpeedrun) RecupererClassement(); 
             });
     }
 
@@ -140,8 +186,40 @@ public class FirebaseManager : MonoBehaviour
 
         FirebaseFirestore.DefaultInstance.Collection("ClassementSpeedrun").Document(uid)
             .SetAsync(data, SetOptions.MergeAll).ContinueWithOnMainThread(t => { 
-                RecupererClassement(); 
+                if (estEnModeSpeedrun && indexOngletSpeedrun == indexNiveau) RecupererClassement(); 
             });
+    }
+
+    // 🚀 NOUVEAU : Récupère le meilleur score de la database pour actualiser la sauvegarde locale
+    public void RestaurerDonneesDepuisCloud()
+    {
+        string uid = GetUserId();
+        if (string.IsNullOrEmpty(uid) || SaveManager.instance == null) return;
+
+        FirebaseFirestore.DefaultInstance.Collection("ClassementClassique").Document(uid).GetSnapshotAsync(Source.Server).ContinueWithOnMainThread(task =>
+        {
+            if (task.IsCompleted && !task.IsFaulted && task.Result.Exists)
+            {
+                Dictionary<string, object> data = task.Result.ToDictionary();
+                if (data.ContainsKey("score"))
+                {
+                    int scoreDB = Convert.ToInt32(data["score"]);
+                    
+                    // Si la database a un meilleur score que la sauvegarde locale, la database gagne !
+                    if (scoreDB > SaveManager.instance.data.meilleurScore)
+                    {
+                        SaveManager.instance.data.meilleurScore = scoreDB;
+                        SaveManager.instance.SauvegarderPartie();
+                        
+                        if (GameManager.instance != null) GameManager.instance.MettreAJourUI();
+                    }
+                }
+            }
+            
+            // Ensuite on synchronise dans le sens inverse (si le local avait de nouveaux temps speedrun)
+            SynchroniserFirestoreAvecDatabaseLocale();
+            RecupererClassement();
+        });
     }
 
     public void SynchroniserFirestoreAvecDatabaseLocale()
@@ -180,7 +258,7 @@ public class FirebaseManager : MonoBehaviour
     }
 
     // =======================================================
-    // 🚀 AFFICHAGE UI OPTIMISÉ ET SÉCURISÉ
+    // 🚀 AFFICHAGE UI 100% CONNECTÉ À LA DATABASE
     // =======================================================
 
     public void RecupererClassement()
@@ -188,7 +266,6 @@ public class FirebaseManager : MonoBehaviour
         string uid = GetUserId();
         if (string.IsNullOrEmpty(uid)) return;
 
-        // 🛡️ SÉCURITÉ ANTI-DOUBLONS : On crée un ID de requête unique
         idRequeteActuelle++;
         int requeteEnCours = idRequeteActuelle;
 
@@ -202,18 +279,10 @@ public class FirebaseManager : MonoBehaviour
         else 
             query = query.OrderByDescending(champTri).Limit(50);
 
-        // Source.Server oblige l'application à lire les VRAIES données, jamais le cache local de l'appareil
         query.GetSnapshotAsync(Source.Server).ContinueWithOnMainThread(task => {
             
-            // 🛑 LA MAGIE EST ICI : Si une autre requête a été lancée entre temps (parce que le joueur a cliqué vite), on annule celle-ci direct !
             if (requeteEnCours != idRequeteActuelle) return;
-
-            if (task.IsFaulted || task.IsCanceled) 
-            {
-                Debug.LogError("🚨 [Firebase] Erreur chargement Leaderboard : " + task.Exception);
-                return;
-            }
-
+            if (task.IsFaulted || task.IsCanceled) return;
             if (this == null || conteneurClassement == null) return; 
 
             int rangActuel = 1;
@@ -224,7 +293,6 @@ public class FirebaseManager : MonoBehaviour
             foreach (DocumentSnapshot document in task.Result.Documents)
             {
                 Dictionary<string, object> data = document.ToDictionary();
-                
                 string nomAffiche = data.ContainsKey("nom") ? data["nom"].ToString() : "Joueur";
                 bool cEstMoi = (document.Id == uid);
                 string texteScore = "";
@@ -236,7 +304,6 @@ public class FirebaseManager : MonoBehaviour
 
                 if (cEstMoi) { monRang = rangActuel; monScoreTexte = texteScore; }
 
-                // 🚀 GESTION PROPRE DU POOLING (Zéro doublon, zéro lag)
                 GameObject ligneObj;
                 if (indexUI < poolDeLignes.Count)
                 {
@@ -247,7 +314,7 @@ public class FirebaseManager : MonoBehaviour
                 {
                     ligneObj = Instantiate(prefabLigneJoueur, conteneurClassement);
                     ligneObj.transform.localScale = Vector3.one; 
-                    poolDeLignes.Add(ligneObj); // On l'ajoute à notre liste sécurisée
+                    poolDeLignes.Add(ligneObj); 
                 }
 
                 ligneObj.GetComponent<LigneLeaderboard>().ConfigurerLigne(rangActuel, nomAffiche, texteScore, cEstMoi, false);
@@ -256,34 +323,45 @@ public class FirebaseManager : MonoBehaviour
                 indexUI++;
             }
 
-            // 🧹 On éteint proprement TOUTES les lignes en trop (fini les scores fantômes !)
             for (int i = indexUI; i < poolDeLignes.Count; i++)
             {
                 poolDeLignes[i].SetActive(false);
             }
 
-            // Affichage de ma propre ligne fixée en bas
             if (maLigneFixeBas != null)
             {
                 string monNom = PlayerPrefs.GetString("MonPseudoFirebase", "Moi");
+                
+                // Si le joueur EST dans le top 50, on a déjà son score de la database
                 if (monRang != -1) 
                 {
                     maLigneFixeBas.ConfigurerLigne(monRang, monNom, monScoreTexte, true, true);
                 }
                 else 
                 {
-                    string monScoreLocal = "";
-                    if (estEnModeSpeedrun)
+                    // 🚀 LA CORRECTION EST LÀ : S'il n'est pas dans le top 50, au lieu de lire sa sauvegarde locale,
+                    // on interroge directement son document personnel dans Firebase !
+                    FirebaseFirestore.DefaultInstance.Collection(collectionName).Document(uid).GetSnapshotAsync(Source.Server).ContinueWithOnMainThread(taskMoi => 
                     {
-                        int tempsLocal = SaveManager.instance.data.meilleursTempsSpeedrun[indexOngletSpeedrun];
-                        if (tempsLocal > 0) monScoreLocal = FormaterScoreEnChrono(tempsLocal);
-                        else monScoreLocal = "--:--.--"; 
-                    }
-                    else
-                    {
-                        monScoreLocal = SaveManager.instance.data.meilleurScore + " pts";
-                    }
-                    maLigneFixeBas.ConfigurerLigne(0, monNom, monScoreLocal, true, true);
+                        if (taskMoi.IsCompleted && !taskMoi.IsFaulted && taskMoi.Result.Exists)
+                        {
+                            Dictionary<string, object> myData = taskMoi.Result.ToDictionary();
+                            string dbTexteScore = "--";
+
+                            if (estEnModeSpeedrun && myData.ContainsKey(champTri)) 
+                                dbTexteScore = FormaterScoreEnChrono(Convert.ToInt64(myData[champTri]));
+                            else if (!estEnModeSpeedrun && myData.ContainsKey("score")) 
+                                dbTexteScore = myData["score"].ToString() + " pts";
+
+                            maLigneFixeBas.ConfigurerLigne(0, monNom, dbTexteScore, true, true);
+                        }
+                        else
+                        {
+                            // S'il n'a pas encore de score dans la base de données
+                            string texteVide = estEnModeSpeedrun ? "--:--.--" : "0 pts";
+                            maLigneFixeBas.ConfigurerLigne(0, monNom, texteVide, true, true);
+                        }
+                    });
                 }
             }
         });
