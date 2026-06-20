@@ -119,6 +119,13 @@ public class SlingshotMove : MonoBehaviour
             if (estAuSol)
             {
                 isDragging = true;
+
+                // 👉 NOUVEAU : Dès qu'on pose le doigt pour viser, on force la caméra en mode "Suivi Nerveux"
+                if (CameraFollow.instance != null)
+                {
+                    CameraFollow.instance.StopperTransition();
+                }
+
                 if (mainCam != null) playerScreenPos = mainCam.WorldToScreenPoint(transform.position + Vector3.up * 0.5f);
                 
                 if (animationRetour != null) StopCoroutine(animationRetour);

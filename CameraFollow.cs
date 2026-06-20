@@ -66,14 +66,18 @@ public class CameraFollow : MonoBehaviour
         
         transform.position = positionDeBase + offsetSecousse;
 
+
         // 4. Gestion de la rotation et de la fin de transition
         if (estEnTransition)
         {
             transform.rotation = Quaternion.Slerp(transform.rotation, rotationFinaleCam, Time.deltaTime * 5f);
             
-            // On a augmenté la marge d'erreur pour être sûr de quitter la transition,
-            // ou on quitte si la vélocité de la caméra commence à baisser (elle a rattrapé la cible)
-            if (Vector3.Distance(transform.position - offsetSecousse, positionFinale) < 0.5f) 
+            // 👉 CORRECTION : On regarde si le joueur est en train de tomber ou d'avancer
+            Rigidbody rbCible = target.GetComponent<Rigidbody>();
+            bool joueurEnMouvement = (rbCible != null && rbCible.linearVelocity.magnitude > 0.5f);
+
+            // Fin de la transition SI la caméra est proche OU SI le joueur a commencé à bouger
+            if (Vector3.Distance(transform.position - offsetSecousse, positionFinale) < 0.5f || joueurEnMouvement) 
             {
                 estEnTransition = false; 
             }
@@ -112,5 +116,9 @@ public class CameraFollow : MonoBehaviour
             yield return null; 
         }
         offsetSecousse = Vector3.zero;
+    }
+    public void StopperTransition()
+    {
+        estEnTransition = false;
     }
 }
